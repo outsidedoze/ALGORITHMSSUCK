@@ -2,6 +2,34 @@
 
 import { useEffect, useState } from 'react'
 
+// TypeScript interfaces
+interface Song {
+  name: string;
+  artist: string;
+  spotify_id: string;
+  preview_url?: string;
+  external_url: string;
+  popularity: number;
+  year?: number;
+  chatgpt_reason?: string;
+}
+
+interface PlaylistResult {
+  success: boolean;
+  message: string;
+  prompt: string;
+  songs: Song[];
+  playlist_id?: string;
+  playlist_url?: string;
+  used_chatgpt: boolean;
+}
+
+interface UserProfile {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
 function generateCodeVerifier(length = 128) {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
   let text = ''
@@ -46,10 +74,10 @@ async function handleLogin() {
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userProfile, setUserProfile] = useState<Record<string, unknown> | null>(null)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [playlistResult, setPlaylistResult] = useState<Record<string, unknown> | null>(null)
+  const [playlistResult, setPlaylistResult] = useState<PlaylistResult | null>(null)
 
   useEffect(() => {
     const accessToken = localStorage.getItem('access_token')
@@ -139,7 +167,7 @@ export default function HomePage() {
           <div>
             <h1 className="text-3xl font-bold text-white">Playlist Genius</h1>
             {userProfile && (
-              <p className="text-white opacity-90">Welcome, {userProfile.display_name as string}!</p>
+              <p className="text-white opacity-90">Welcome, {userProfile.display_name}!</p>
             )}
           </div>
           <button 
@@ -202,7 +230,7 @@ export default function HomePage() {
              <div className="mt-8 p-6 bg-green-50 border border-green-200 rounded-lg">
                <h3 className="text-lg font-semibold text-green-800 mb-4">Generated Playlist</h3>
                <p className="text-green-700 mb-4">
-                 <strong>Prompt:</strong> {playlistResult.prompt as string}
+                 <strong>Prompt:</strong> {playlistResult.prompt}
                </p>
                
                {/* Playlist Link */}
@@ -210,7 +238,7 @@ export default function HomePage() {
                  <div className="mb-4 p-4 bg-white rounded border">
                    <h4 className="font-medium text-green-800 mb-2">🎵 Your Playlist Has Been Created!</h4>
                    <a
-                     href={playlistResult.playlist_url as string}
+                     href={playlistResult.playlist_url}
                      target="_blank"
                      rel="noopener noreferrer"
                      className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
@@ -222,25 +250,25 @@ export default function HomePage() {
                
                <div className="space-y-2">
                  <h4 className="font-medium text-green-800">Songs Added:</h4>
-                 {(playlistResult.songs as Record<string, unknown>[]).map((song: Record<string, unknown>, index: number) => (
+                 {playlistResult.songs.map((song: Song, index: number) => (
                    <div key={index} className="flex justify-between items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors">
                      <div className="flex-1">
-                       <span className="font-medium text-gray-900">{song.name as string}</span>
+                       <span className="font-medium text-gray-900">{song.name}</span>
                        {song.year !== undefined && song.year !== null && (
-                         <span className="text-gray-500 ml-2">({song.year as number})</span>
+                         <span className="text-gray-500 ml-2">({song.year})</span>
                        )}
-                       <span className="text-gray-600 ml-2">by {song.artist as string}</span>
+                       <span className="text-gray-600 ml-2">by {song.artist}</span>
                        {song.popularity !== undefined && (
                          <div className="mt-1">
                            <span className={`text-xs px-2 py-1 rounded ${
-                             (song.popularity as number) < 30 ? 'bg-red-100 text-red-800' :
-                             (song.popularity as number) < 50 ? 'bg-yellow-100 text-yellow-800' :
-                             (song.popularity as number) < 70 ? 'bg-blue-100 text-blue-800' :
+                             song.popularity < 30 ? 'bg-red-100 text-red-800' :
+                             song.popularity < 50 ? 'bg-yellow-100 text-yellow-800' :
+                             song.popularity < 70 ? 'bg-blue-100 text-blue-800' :
                              'bg-gray-100 text-gray-800'
                            }`}>
-                             {(song.popularity as number) < 30 ? '🔥 Very Obscure' :
-                              (song.popularity as number) < 50 ? '💎 Hidden Gem' :
-                              (song.popularity as number) < 70 ? '⭐ Lesser Known' :
+                             {song.popularity < 30 ? '🔥 Very Obscure' :
+                              song.popularity < 50 ? '💎 Hidden Gem' :
+                              song.popularity < 70 ? '⭐ Lesser Known' :
                               '📻 Popular'}
                            </span>
                          </div>
@@ -248,14 +276,14 @@ export default function HomePage() {
                        {song.chatgpt_reason && (
                          <div className="mt-1">
                            <span className="text-xs text-gray-600 italic">
-                             🤖 {song.chatgpt_reason as string}
+                             🤖 {song.chatgpt_reason}
                            </span>
                          </div>
                        )}
                      </div>
                      {song.external_url && (
                        <a
-                         href={song.external_url as string}
+                         href={song.external_url}
                          target="_blank"
                          rel="noopener noreferrer"
                          className="text-green-600 hover:text-green-800 font-medium text-sm"
