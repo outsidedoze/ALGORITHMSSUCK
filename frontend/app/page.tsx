@@ -46,10 +46,10 @@ async function handleLogin() {
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userProfile, setUserProfile] = useState<any>(null)
+  const [userProfile, setUserProfile] = useState<Record<string, unknown> | null>(null)
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [playlistResult, setPlaylistResult] = useState<any>(null)
+  const [playlistResult, setPlaylistResult] = useState<Record<string, unknown> | null>(null)
 
   useEffect(() => {
     const accessToken = localStorage.getItem('access_token')
@@ -183,16 +183,16 @@ export default function HomePage() {
             <h3 className="text-lg font-medium text-gray-800 mb-4">Example prompts:</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">"Upbeat pop songs for a road trip with friends"</p>
+                <p className="text-sm text-gray-600">&ldquo;Upbeat pop songs for a road trip with friends&rdquo;</p>
               </div>
               <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">"Relaxing acoustic music for a cozy evening"</p>
+                <p className="text-sm text-gray-600">&ldquo;Relaxing acoustic music for a cozy evening&rdquo;</p>
               </div>
               <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">"High-energy EDM for a workout session"</p>
+                <p className="text-sm text-gray-600">&ldquo;High-energy EDM for a workout session&rdquo;</p>
               </div>
               <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">"Classic rock hits from the 70s and 80s"</p>
+                <p className="text-sm text-gray-600">&ldquo;Classic rock hits from the 70s and 80s&rdquo;</p>
               </div>
             </div>
                      </div>
@@ -222,7 +222,7 @@ export default function HomePage() {
                
                <div className="space-y-2">
                  <h4 className="font-medium text-green-800">Songs Added:</h4>
-                 {playlistResult.songs.map((song: any, index: number) => (
+                 {(playlistResult.songs as Record<string, unknown>[]).map((song: Record<string, unknown>, index: number) => (
                    <div key={index} className="flex justify-between items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors">
                      <div className="flex-1">
                        <span className="font-medium text-gray-900">{song.name}</span>
