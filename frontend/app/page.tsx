@@ -222,7 +222,7 @@ export default function HomePage() {
                
                <div className="space-y-2">
                  <h4 className="font-medium text-green-800">Songs Added:</h4>
-                 {playlistResult.songs.map((song, index) => (
+                 {playlistResult.songs.map((song: any, index: number) => (
                    <div key={index} className="flex justify-between items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors">
                      <div className="flex-1">
                        <span className="font-medium text-gray-900">{song.name}</span>
