@@ -36,7 +36,7 @@ async function handleLogin() {
     response_type: 'code',
     client_id: '2ee0d98b21d048978bf73d78924daf91',
     scope: 'user-read-private user-read-email playlist-modify-public playlist-modify-private user-read-recently-played user-top-read',
-    redirect_uri: 'http://localhost:3000/callback',
+    redirect_uri: `${window.location.origin}/callback`,
     code_challenge_method: 'S256',
     code_challenge: challenge,
   })
@@ -56,7 +56,7 @@ export default function HomePage() {
     if (accessToken) {
       setIsAuthenticated(true)
       // Fetch user profile
-      fetch('http://127.0.0.1:5000/me', {
+      fetch('/api/me', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,7 +87,7 @@ export default function HomePage() {
     const accessToken = localStorage.getItem('access_token')
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/generate-playlist', {
+      const response = await fetch('/api/generate-playlist', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

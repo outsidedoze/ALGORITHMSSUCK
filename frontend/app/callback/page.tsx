@@ -36,13 +36,13 @@ export default function CallbackPage() {
     
     const requestData = {
       code,
-      redirect_uri: 'http://localhost:3000/callback',
+      redirect_uri: `${window.location.origin}/callback`,
       code_verifier: codeVerifier,
     }
     console.log('Sending to backend:', requestData)
     
     // Send the code to the backend to exchange for access token
-    fetch('http://127.0.0.1:5000/callback', {
+    fetch('/api/callback', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
