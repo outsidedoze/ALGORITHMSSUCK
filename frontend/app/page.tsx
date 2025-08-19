@@ -46,10 +46,10 @@ async function handleLogin() {
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userProfile, setUserProfile] = useState(null)
+  const [userProfile, setUserProfile] = useState<any>(null)
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [playlistResult, setPlaylistResult] = useState(null)
+  const [playlistResult, setPlaylistResult] = useState<any>(null)
 
   useEffect(() => {
     const accessToken = localStorage.getItem('access_token')
