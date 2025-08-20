@@ -13,8 +13,8 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Check if Spotify credentials are configured (fallback to frontend's public client_id)
-    const client_id = (process.env.SPOTIFY_CLIENT_ID || '2ee0d98b21d048978bf73d78924daf91').trim();
+    // Hardcode client_id to avoid environment variable corruption
+    const client_id = '2ee0d98b21d048978bf73d78924daf91';
     console.log('Using client_id:', client_id);
 
     const tokenUrl = 'https://accounts.spotify.com/api/token';
