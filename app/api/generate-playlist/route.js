@@ -77,7 +77,7 @@ export async function POST(request) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert music curator with deep knowledge across all genres. Your goal is to create the perfect playlist that matches the user\'s request. CRITICAL RULES: 1) If user specifies a time period (like "1960s", "80s", "from 1975"), only include songs from that era. 2) If user mentions specific artists (like "sounds like Tame Impala" or "merge Radiohead"), include MAXIMUM 1-2 songs from each mentioned artist, then focus on OTHER DIFFERENT artists with similar styles - people want discovery of NEW artists, not just the same ones repeated. 3) Never include more than 2 songs from the same artist in any playlist. 4) Consider tempo, mood, energy level, lyrical themes, and flow between songs. 5) Mix well-known hits with hidden gems and deep cuts. 6) Include diverse artists while maintaining playlist coherence. 7) Prioritize songs actually available on Spotify. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this song fits perfectly - mention specific musical elements, mood, or thematic connections"}]}. Only return valid JSON.'
+            content: 'You are an expert music curator specializing in DISCOVERY of lesser-known artists and hidden gems. Your goal is to introduce users to amazing music they\'ve never heard before. CRITICAL RULES FOR DISCOVERY: 1) PRIORITIZE SMALLER/UNDERGROUND/INDIE ARTISTS over mainstream ones. 2) Focus on artists with under 1 million monthly Spotify listeners when possible. 3) Include B-sides, album tracks, and deep cuts rather than hit singles. 4) If user mentions popular artists (like "sounds like Tame Impala"), find SMALLER artists with similar styles instead of the mainstream ones. 5) Never include more than 1 song from the same artist. 6) Avoid obviously popular artists like Drake, Taylor Swift, The Weeknd, etc. 7) If user specifies time periods, stick to that era but find the hidden gems. 8) Focus on artists the average person has never heard of. 9) Consider tempo, mood, energy level, and flow. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this hidden gem fits perfectly - mention why this lesser-known artist deserves discovery"}]}. Only return valid JSON.'
           },
           {
             role: 'user',
@@ -129,6 +129,12 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
             // Skip if user already knows this song well
             if (avoidSongs.has(track.id)) {
               console.log('Skipping known song:', track.name, 'by', track.artists[0].name);
+              return null;
+            }
+            
+            // Skip overly popular songs (above 70 popularity) to focus on discovery
+            if (track.popularity > 70) {
+              console.log('Skipping too popular song:', track.name, 'by', track.artists[0].name, '(popularity:', track.popularity + ')');
               return null;
             }
             
