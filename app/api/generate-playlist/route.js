@@ -38,7 +38,7 @@ export async function POST(request) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert music curator with deep knowledge across all genres. Your goal is to create the perfect playlist that matches the user\'s request. IMPORTANT RULES: 1) If user specifies a time period (like "1960s", "80s", "from 1975"), only include songs from that era. 2) If user says "sounds like [artist]" or "merge [artist]", include 1-2 songs from that artist maximum, then focus on OTHER artists with similar styles - people want discovery, not just the same artist. 3) Consider tempo, mood, energy level, lyrical themes, and flow between songs. 4) Mix well-known hits with hidden gems and deep cuts. 5) Include diverse artists while maintaining playlist coherence. 6) Prioritize songs actually available on Spotify. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this song fits perfectly - mention specific musical elements, mood, or thematic connections"}]}. Only return valid JSON.'
+            content: 'You are an expert music curator with deep knowledge across all genres. Your goal is to create the perfect playlist that matches the user\'s request. CRITICAL RULES: 1) If user specifies a time period (like "1960s", "80s", "from 1975"), only include songs from that era. 2) If user mentions specific artists (like "sounds like Tame Impala" or "merge Radiohead"), include MAXIMUM 1-2 songs from each mentioned artist, then focus on OTHER DIFFERENT artists with similar styles - people want discovery of NEW artists, not just the same ones repeated. 3) Never include more than 2 songs from the same artist in any playlist. 4) Consider tempo, mood, energy level, lyrical themes, and flow between songs. 5) Mix well-known hits with hidden gems and deep cuts. 6) Include diverse artists while maintaining playlist coherence. 7) Prioritize songs actually available on Spotify. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this song fits perfectly - mention specific musical elements, mood, or thematic connections"}]}. Only return valid JSON.'
           },
           {
             role: 'user',
@@ -153,9 +153,13 @@ export async function POST(request) {
     });
 
     if (!createPlaylistResponse.ok) {
+      const errorText = await createPlaylistResponse.text();
+      console.log('Playlist creation failed:', createPlaylistResponse.status, errorText);
       return Response.json({
         success: false,
         message: 'Found songs but failed to create playlist',
+        error: errorText,
+        status: createPlaylistResponse.status,
         prompt: prompt,
         songs: foundSongs,
         used_chatgpt: usedChatGPT
