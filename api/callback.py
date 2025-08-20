@@ -1,21 +1,32 @@
-from flask import Flask, request, jsonify
+import json
 import os
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__)
-
-@app.route('/api/callback', methods=['POST'])
-def callback():
+def handler(request):
+    if request.method != 'POST':
+        return {
+            'statusCode': 405,
+            'body': json.dumps({'error': 'Method not allowed'})
+        }
+    
     try:
-        data = request.get_json()
+        # Parse request body
+        body = request.body
+        if isinstance(body, bytes):
+            body = body.decode('utf-8')
+        data = json.loads(body)
+        
         print(f"Received data: {data}")
         
         if not data:
             print("No JSON data received")
-            return jsonify({'error': 'No JSON data received'}), 400
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'No JSON data received'})
+            }
         
         code = data.get('code')
         redirect_uri = data.get('redirect_uri')
@@ -27,7 +38,10 @@ def callback():
 
         if not code or not redirect_uri or not code_verifier:
             print("Missing required fields")
-            return jsonify({'error': 'Missing required fields', 'received': data}), 400
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing required fields', 'received': data})
+            }
 
         # Check if Spotify credentials are configured (fallback to frontend's public client_id for local dev)
         client_id = os.environ.get('SPOTIFY_CLIENT_ID') or '2ee0d98b21d048978bf73d78924daf91'
@@ -57,16 +71,23 @@ def callback():
                 error_data['details'] = response.json()
             except:
                 error_data['details'] = response.text
-            return jsonify(error_data), 500
+            return {
+                'statusCode': 500,
+                'body': json.dumps(error_data)
+            }
 
         spotify_response = response.json()
         print(f"Successfully got tokens: {list(spotify_response.keys())}")
-        return jsonify(spotify_response)
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps(spotify_response)
+        }
     except Exception as e:
         print(f"Error in callback: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
-
-def handler(request):
-    return app(request.environ, request.start_response)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': 'Internal server error', 'details': str(e)})
+        }
