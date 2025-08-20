@@ -33,7 +33,7 @@ export async function POST(request) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: payload,
+      body: payload.toString(),
     });
 
     console.log('Spotify response status:', response.status);
