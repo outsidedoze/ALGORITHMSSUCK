@@ -1,29 +1,16 @@
-export default async function handler(req, res) {
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
+export async function POST(request) {
   try {
-    const { code, redirect_uri, code_verifier } = req.body;
+    const data = await request.json();
+    const { code, redirect_uri, code_verifier } = data;
 
     console.log('Received data:', { code, redirect_uri, code_verifier });
 
     if (!code || !redirect_uri || !code_verifier) {
       console.log('Missing required fields');
-      return res.status(400).json({
+      return Response.json({
         error: 'Missing required fields',
-        received: req.body
-      });
+        received: data
+      }, { status: 400 });
     }
 
     // Check if Spotify credentials are configured (fallback to frontend's public client_id)
@@ -66,18 +53,18 @@ export default async function handler(req, res) {
         errorData.details = responseText;
       }
       
-      return res.status(500).json(errorData);
+      return Response.json(errorData, { status: 500 });
     }
 
     const spotifyResponse = JSON.parse(responseText);
     console.log('Successfully got tokens:', Object.keys(spotifyResponse));
     
-    return res.status(200).json(spotifyResponse);
+    return Response.json(spotifyResponse);
   } catch (error) {
     console.error('Error in callback:', error);
-    return res.status(500).json({
+    return Response.json({
       error: 'Internal server error',
       details: error.message
-    });
+    }, { status: 500 });
   }
 }
