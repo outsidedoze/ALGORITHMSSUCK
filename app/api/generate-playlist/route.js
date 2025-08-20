@@ -105,6 +105,7 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
         usedChatGPT = true;
         console.log('ChatGPT parsed songs:', chatgptSongs.length);
         console.log('AI generated title:', aiTitle);
+        console.log('Parsed object keys:', Object.keys(parsed));
       } catch (e) {
         console.log('Failed to parse ChatGPT response:', e.message);
         console.log('ChatGPT response content:', chatgptData.choices[0].message.content);
