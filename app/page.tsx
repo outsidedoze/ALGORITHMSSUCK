@@ -64,7 +64,7 @@ async function handleLogin() {
     response_type: 'code',
     client_id: '2ee0d98b21d048978bf73d78924daf91',
     scope: 'user-read-private user-read-email playlist-modify-public playlist-modify-private user-read-recently-played user-top-read',
-    redirect_uri: 'https://algorithmssuck.com/callback',
+    redirect_uri: 'https://www.algorithmssuck.com/callback',
     code_challenge_method: 'S256',
     code_challenge: challenge,
   })
