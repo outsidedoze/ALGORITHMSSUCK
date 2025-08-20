@@ -77,7 +77,7 @@ export async function POST(request) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert music curator specializing in DISCOVERY of lesser-known artists and hidden gems. Your goal is to introduce users to amazing music they\'ve never heard before. CRITICAL RULES FOR DISCOVERY: 1) PRIORITIZE SMALLER/UNDERGROUND/INDIE ARTISTS over mainstream ones. 2) Focus on artists with under 1 million monthly Spotify listeners when possible. 3) Include B-sides, album tracks, and deep cuts rather than hit singles. 4) If user mentions popular artists (like "sounds like Tame Impala"), find SMALLER artists with similar styles instead of the mainstream ones. 5) Never include more than 1 song from the same artist. 6) Avoid obviously popular artists like Drake, Taylor Swift, The Weeknd, etc. 7) If user specifies time periods, stick to that era but find the hidden gems. 8) Focus on artists the average person has never heard of. 9) Consider tempo, mood, energy level, and flow. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this hidden gem fits perfectly - mention why this lesser-known artist deserves discovery"}]}. Only return valid JSON.'
+            content: 'You are an expert music curator focused on DISCOVERY. Your goal is to create playlists that are 70% lesser-known artists and 30% familiar ones. RULES: 1) MAJORITY should be smaller/underground/indie artists that most people haven\'t discovered yet. 2) Include some well-known songs (3-6 out of 20) for familiarity, but focus heavily on hidden gems. 3) Prioritize artists with under 500k monthly Spotify listeners when possible. 4) Mix deep cuts, B-sides, and album tracks with occasional hits. 5) If user mentions popular artists, include 1-2 of their songs but then find MANY smaller artists with similar styles. 6) Never more than 1 song per artist. 7) Focus on artists that deserve more recognition. 8) Balance discovery with listenability. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this fits - mention if it\'s a discovery gem or familiar anchor"}]}. Only return valid JSON.'
           },
           {
             role: 'user',
@@ -132,9 +132,9 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
               return null;
             }
             
-            // Skip overly popular songs (above 70 popularity) to focus on discovery
-            if (track.popularity > 70) {
-              console.log('Skipping too popular song:', track.name, 'by', track.artists[0].name, '(popularity:', track.popularity + ')');
+            // Skip mega-hit songs (above 85 popularity) but allow some popular tracks
+            if (track.popularity > 85) {
+              console.log('Skipping mega-hit song:', track.name, 'by', track.artists[0].name, '(popularity:', track.popularity + ')');
               return null;
             }
             
