@@ -26,6 +26,45 @@ export async function POST(request) {
 
     const userProfile = await userResponse.json();
 
+    // Get user's listening history to avoid overplayed songs
+    const recentTracksResponse = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
+      headers: {
+        'Authorization': `Bearer ${access_token}`
+      }
+    });
+
+    const topTracksResponse = await fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term', {
+      headers: {
+        'Authorization': `Bearer ${access_token}`
+      }
+    });
+
+    let avoidSongs = new Set();
+    let avoidArtists = new Set();
+
+    // Add recently played tracks to avoid list
+    if (recentTracksResponse.ok) {
+      const recentData = await recentTracksResponse.json();
+      recentData.items.forEach(item => {
+        avoidSongs.add(item.track.id);
+        avoidArtists.add(item.track.artists[0].name.toLowerCase());
+      });
+      console.log('Avoiding', recentData.items.length, 'recently played tracks');
+    }
+
+    // Add top tracks to avoid list (songs they already love)
+    if (topTracksResponse.ok) {
+      const topData = await topTracksResponse.json();
+      topData.items.forEach(track => {
+        avoidSongs.add(track.id);
+        avoidArtists.add(track.artists[0].name.toLowerCase());
+      });
+      console.log('Avoiding', topData.items.length, 'top tracks');
+    }
+
+    console.log('Total songs to avoid:', avoidSongs.size);
+    console.log('Total artists to avoid:', avoidArtists.size);
+
     // Get ChatGPT recommendations
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -42,7 +81,9 @@ export async function POST(request) {
           },
           {
             role: 'user',
-            content: `Create a playlist for: ${prompt}`
+            content: `Create a playlist for: ${prompt}
+
+IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: ${Array.from(avoidArtists).slice(0, 20).join(', ')}. Instead, find similar but DIFFERENT artists they haven't discovered yet.`
           }
         ],
         max_tokens: 2000,
@@ -84,6 +125,13 @@ export async function POST(request) {
           const searchData = await searchResponse.json();
           if (searchData.tracks.items.length > 0) {
             const track = searchData.tracks.items[0];
+            
+            // Skip if user already knows this song well
+            if (avoidSongs.has(track.id)) {
+              console.log('Skipping known song:', track.name, 'by', track.artists[0].name);
+              return null;
+            }
+            
             return {
               name: track.name,
               artist: track.artists[0].name,
