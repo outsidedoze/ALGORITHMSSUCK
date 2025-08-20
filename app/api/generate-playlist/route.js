@@ -77,7 +77,7 @@ export async function POST(request) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert music curator focused on DISCOVERY. Your goal is to create playlists that are 70% lesser-known artists and 30% familiar ones. RULES: 1) MAJORITY should be smaller/underground/indie artists that most people haven\'t discovered yet. 2) Include some well-known songs (3-6 out of 20) for familiarity, but focus heavily on hidden gems. 3) Prioritize artists with under 500k monthly Spotify listeners when possible. 4) Mix deep cuts, B-sides, and album tracks with occasional hits. 5) If user mentions popular artists, include 1-2 of their songs but then find MANY smaller artists with similar styles. 6) Never more than 1 song per artist. 7) Focus on artists that deserve more recognition. 8) Balance discovery with listenability. Return exactly 20 songs in this JSON format: {"songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this fits - mention if it\'s a discovery gem or familiar anchor"}]}. Only return valid JSON.'
+            content: 'You are an expert music curator focused on DISCOVERY. Your goal is to create playlists that are 70% lesser-known artists and 30% familiar ones. RULES: 1) MAJORITY should be smaller/underground/indie artists that most people haven\'t discovered yet. 2) Include some well-known songs (3-6 out of 20) for familiarity, but focus heavily on hidden gems. 3) Prioritize artists with under 500k monthly Spotify listeners when possible. 4) Mix deep cuts, B-sides, and album tracks with occasional hits. 5) If user mentions popular artists, include 1-2 of their songs but then find MANY smaller artists with similar styles. 6) Never more than 1 song per artist. 7) Focus on artists that deserve more recognition. 8) Balance discovery with listenability. ALSO create a funny, memorable playlist title that captures the vibe - be creative, quirky, Gen Z cool but not try-hard. Swearing is fine. Make it something people will remember and want to share. Return in this JSON format: {"title": "Creative Playlist Title", "songs": [{"name": "Song Title", "artist": "Artist Name", "reason": "Why this fits"}]}. Only return valid JSON.'
           },
           {
             role: 'user',
@@ -92,6 +92,7 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
     });
 
     let chatgptSongs = [];
+    let aiTitle = null;
     let usedChatGPT = false;
 
     if (openaiResponse.ok) {
@@ -100,8 +101,10 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
       try {
         const parsed = JSON.parse(chatgptData.choices[0].message.content);
         chatgptSongs = parsed.songs || [];
+        aiTitle = parsed.title || null;
         usedChatGPT = true;
         console.log('ChatGPT parsed songs:', chatgptSongs.length);
+        console.log('AI generated title:', aiTitle);
       } catch (e) {
         console.log('Failed to parse ChatGPT response:', e.message);
         console.log('ChatGPT response content:', chatgptData.choices[0].message.content);
@@ -219,17 +222,14 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
     }
 
     // Create playlist
-    const sanitizedPrompt = prompt.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const shortPrompt = sanitizedPrompt.slice(0, 40);
-    const playlistName = `AI Discovery ${shortPrompt}`;
+    const playlistName = aiTitle || `AI Discovery: ${prompt.slice(0, 40)}...`;
     console.log('Creating playlist for user:', userProfile.id);
     console.log('Playlist name:', playlistName);
-    console.log('Original prompt:', prompt);
-    console.log('Sanitized prompt:', sanitizedPrompt);
+    console.log('AI-generated title:', aiTitle);
     
-    // Try the simplest possible playlist creation first
     const playlistBody = {
-      name: "AI Discovery Test",
+      name: playlistName,
+      description: "🎵 AI-curated discovery playlist with hidden gems and familiar favorites",
       public: false
     };
     
