@@ -18,13 +18,12 @@ export async function POST(request) {
     console.log('Using client_id:', client_id);
 
     const tokenUrl = 'https://accounts.spotify.com/api/token';
-    const payload = new URLSearchParams({
-      client_id: client_id,
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: redirect_uri,
-      code_verifier: code_verifier,
-    });
+    const payload = new URLSearchParams();
+    payload.append('client_id', client_id);
+    payload.append('grant_type', 'authorization_code');
+    payload.append('code', code);
+    payload.append('redirect_uri', redirect_uri);
+    payload.append('code_verifier', code_verifier);
 
     console.log('Sending to Spotify:', Object.fromEntries(payload));
 
