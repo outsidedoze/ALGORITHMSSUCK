@@ -55,13 +55,18 @@ export async function POST(request) {
 
     if (openaiResponse.ok) {
       const chatgptData = await openaiResponse.json();
+      console.log('ChatGPT raw response:', chatgptData.choices[0].message.content);
       try {
         const parsed = JSON.parse(chatgptData.choices[0].message.content);
         chatgptSongs = parsed.songs || [];
         usedChatGPT = true;
+        console.log('ChatGPT parsed songs:', chatgptSongs.length);
       } catch (e) {
-        console.log('Failed to parse ChatGPT response, using fallback search');
+        console.log('Failed to parse ChatGPT response:', e.message);
+        console.log('ChatGPT response content:', chatgptData.choices[0].message.content);
       }
+    } else {
+      console.log('ChatGPT API failed:', openaiResponse.status, await openaiResponse.text());
     }
 
     // Search for songs on Spotify
