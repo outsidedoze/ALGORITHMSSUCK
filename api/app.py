@@ -615,5 +615,8 @@ def callback():
         traceback.print_exc()
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
 
+# Export the app for Vercel
+application = app
+
 if __name__ == "__main__":
     app.run(debug=True)
