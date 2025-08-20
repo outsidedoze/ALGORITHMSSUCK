@@ -185,9 +185,24 @@ IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: 
       });
     }
 
+    if (foundSongs.length < 5) {
+      return Response.json({
+        success: false,
+        message: `Only found ${foundSongs.length} songs - need at least 5 for a good playlist`,
+        prompt: prompt,
+        songs: foundSongs,
+        used_chatgpt: usedChatGPT
+      });
+    }
+
+    console.log('Found', foundSongs.length, 'songs for playlist');
+
     // Create playlist
     const playlistName = `AI Playlist: ${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`;
-    const createPlaylistResponse = await fetch(`https://api.spotify.com/v1/users/${userProfile.id}/playlists`, {
+    console.log('Creating playlist for user:', userProfile.id);
+    console.log('Playlist name:', playlistName);
+    
+    const createPlaylistResponse = await fetch(`https://api.spotify.com/v1/me/playlists`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
