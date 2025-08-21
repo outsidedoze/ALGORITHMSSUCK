@@ -81,9 +81,20 @@ export async function POST(request) {
           },
           {
             role: 'user',
-            content: `Create a playlist for: ${prompt}
+            content: `FIRST: Check if this request mentions a time period like "90s", "80s", "70s", "60s", "from 1995", etc.
 
-IMPORTANT: Focus on DISCOVERY. Avoid these artists the user already knows well: ${Array.from(avoidArtists).slice(0, 20).join(', ')}. Instead, find similar but DIFFERENT artists they haven't discovered yet.`
+User request: "${prompt}"
+
+TIME PERIOD CHECK:
+- If ANY time period is mentioned, ONLY include songs released in those exact years
+- "90s" = 1990-1999 releases ONLY
+- "80s" = 1980-1989 releases ONLY  
+- "70s" = 1970-1979 releases ONLY
+- Be STRICT about release dates - check them!
+
+DISCOVERY FOCUS: Avoid these artists the user knows: ${Array.from(avoidArtists).slice(0, 20).join(', ')}
+
+Create exactly 20 songs following all rules above.`
           }
         ],
         max_tokens: 2000,
