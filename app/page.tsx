@@ -11,7 +11,7 @@ interface Song {
   external_url: string;
   popularity: number;
   year?: number;
-  chatgpt_reason?: string;
+  reason?: string;
 }
 
 interface PlaylistResult {
@@ -21,7 +21,7 @@ interface PlaylistResult {
   songs: Song[];
   playlist_id?: string;
   playlist_url?: string;
-  used_chatgpt: boolean;
+  used_ai: boolean;
 }
 
 interface UserProfile {
@@ -273,10 +273,10 @@ export default function HomePage() {
                            </span>
                          </div>
                        )}
-                       {song.chatgpt_reason && (
+                       {song.reason && (
                          <div className="mt-1">
                            <span className="text-xs text-gray-600 italic">
-                             🤖 {song.chatgpt_reason}
+                             ✦ {song.reason}
                            </span>
                          </div>
                        )}

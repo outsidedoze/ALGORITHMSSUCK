@@ -10,149 +10,153 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Get user profile for playlist creation
+    // Get user profile
     const userResponse = await fetch('https://api.spotify.com/v1/me', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
+      headers: { 'Authorization': `Bearer ${access_token}` }
     });
 
     if (!userResponse.ok) {
-      return Response.json({
-        error: 'Failed to get user profile',
-        success: false
-      }, { status: 401 });
+      return Response.json({ error: 'Failed to get user profile', success: false }, { status: 401 });
     }
 
     const userProfile = await userResponse.json();
 
-    // Get user's listening history to avoid overplayed songs
-    const recentTracksResponse = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
-    });
+    // Fetch listening data in parallel
+    const [recentTracksResponse, topTracksResponse, topArtistsResponse] = await Promise.all([
+      fetch('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+      }),
+      fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term', {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+      }),
+      fetch('https://api.spotify.com/v1/me/top/artists?limit=20&time_range=medium_term', {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+      })
+    ]);
 
-    const topTracksResponse = await fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
-    });
+    let avoidSongIds = new Set();
+    let avoidArtistNames = new Set();
+    let tasteProfileArtists = [];
 
-    let avoidSongs = new Set();
-    let avoidArtists = new Set();
-
-    // Add recently played tracks to avoid list
     if (recentTracksResponse.ok) {
       const recentData = await recentTracksResponse.json();
       recentData.items.forEach(item => {
-        avoidSongs.add(item.track.id);
-        avoidArtists.add(item.track.artists[0].name.toLowerCase());
+        avoidSongIds.add(item.track.id);
+        avoidArtistNames.add(item.track.artists[0].name);
       });
-      console.log('Avoiding', recentData.items.length, 'recently played tracks');
     }
 
-    // Add top tracks to avoid list (songs they already love)
     if (topTracksResponse.ok) {
       const topData = await topTracksResponse.json();
       topData.items.forEach(track => {
-        avoidSongs.add(track.id);
-        avoidArtists.add(track.artists[0].name.toLowerCase());
+        avoidSongIds.add(track.id);
+        avoidArtistNames.add(track.artists[0].name);
       });
-      console.log('Avoiding', topData.items.length, 'top tracks');
     }
 
-    console.log('Total songs to avoid:', avoidSongs.size);
-    console.log('Total artists to avoid:', avoidArtists.size);
+    if (topArtistsResponse.ok) {
+      const topArtistsData = await topArtistsResponse.json();
+      tasteProfileArtists = topArtistsData.items.map(a => a.name);
+      tasteProfileArtists.forEach(name => avoidArtistNames.add(name));
+    }
 
-    // Get ChatGPT recommendations
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Build the prompt for Claude Haiku
+    const systemPrompt = `You are a brilliant music curator — part record store clerk with encyclopedic knowledge, part DJ who knows how to read a room. Your job is to build playlists that feel like they were made by someone who *really* gets the listener: songs that hit the exact emotional register they're after, but entirely through music they haven't discovered yet.
+
+CORE PHILOSOPHY:
+- Every song must be a genuine discovery — nothing from their existing listening history
+- The playlist should feel cohesive, like a side of a record or a mixtape with real intention — not a random list
+- You're finding music that shares DNA with what they love, but from corners they haven't explored: subgenres, regional scenes, adjacent eras, international artists, deep genre history
+- The listener should feel like the playlist *gets* them — but surprises them on every track
+
+HOW TO BUILD THE PLAYLIST:
+1. Analyze the listener's taste profile (their top artists) — identify the sonic qualities, emotional textures, production styles, tempos, and lyrical themes that define their taste
+2. Interpret the user's prompt — what feeling, energy, or moment are they curating this for?
+3. Find 20 songs at the intersection: matching their taste DNA and the prompt's intent, but drawn entirely from outside their existing bubble
+
+RULES:
+- Exactly 20 songs
+- Never include an artist from their top artists or recently played list
+- Never repeat artists within the playlist
+- Vary era, geography, and subgenre — don't just pick 20 versions of the same sound
+- If a time period is mentioned ("90s", "80s", etc.), be strict — "90s" means 1990–1999 only
+- Every song must actually exist and be findable on major streaming platforms — no hallucinations, no made-up tracks
+- Write a witty, specific playlist title that nails the vibe — make it feel earned, not generic
+
+Return valid JSON only, no markdown, no other text:
+{"title": "Playlist Title Here", "songs": [{"name": "Song Name", "artist": "Artist Name", "reason": "One sentence on why this fits perfectly"}]}`;
+
+    const userPrompt = `The listener's top artists (their taste profile):
+${tasteProfileArtists.length > 0 ? tasteProfileArtists.join(', ') : 'Not available'}
+
+Artists to avoid entirely (already in their rotation):
+${Array.from(avoidArtistNames).slice(0, 40).join(', ')}
+
+Their request: "${prompt}"
+
+Build the perfect 20-song discovery playlist. Return JSON only.`;
+
+    // Call Claude Haiku via Anthropic API
+    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a music curator with IMPECCABLE TASTE. Create playlists with EXACTLY 20 songs: 70% hidden gems, 30% familiar tracks.\n\nCRITICAL RULES:\n1) RETURN EXACTLY 20 SONGS - never less, never more\n2) RESPECT TIME PERIODS STRICTLY: "90s" = 1990-1999 ONLY, "80s" = 1980-1989 ONLY, etc. Check release dates!\n3) QUALITY OVER OBSCURITY: Up-and-coming artists with critical acclaim, rave reviews, buzz in music circles\n4) Target genuinely talented artists under 500k monthly listeners\n5) Include Pitchfork/Fader/NPR Music/Rolling Stone featured artists\n6) Never repeat artists - each song must be from different artist\n7) Balance discovery gems with familiar anchor tracks\n\nCREATE a witty, memorable playlist title. Gen Z cool, funny, shareable. Swearing OK.\n\nReturn EXACTLY this JSON format:\n{"title": "Creative Title Here", "songs": [20 song objects with name/artist/reason]}\n\nMUST return valid JSON with exactly 20 songs.'
-          },
-          {
-            role: 'user',
-            content: `FIRST: Check if this request mentions a time period like "90s", "80s", "70s", "60s", "from 1995", etc.
-
-User request: "${prompt}"
-
-TIME PERIOD CHECK:
-- If ANY time period is mentioned, ONLY include songs released in those exact years
-- "90s" = 1990-1999 releases ONLY
-- "80s" = 1980-1989 releases ONLY  
-- "70s" = 1970-1979 releases ONLY
-- Be STRICT about release dates - check them!
-
-DISCOVERY FOCUS: Avoid these artists the user knows: ${Array.from(avoidArtists).slice(0, 20).join(', ')}
-
-Create exactly 20 songs following all rules above.`
-          }
-        ],
-        max_tokens: 2000,
-        temperature: 0.7
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
       })
     });
 
-    let chatgptSongs = [];
+    let claudeSongs = [];
     let aiTitle = null;
-    let usedChatGPT = false;
 
-    if (openaiResponse.ok) {
-      const chatgptData = await openaiResponse.json();
-      console.log('ChatGPT raw response:', chatgptData.choices[0].message.content);
+    if (anthropicResponse.ok) {
+      const anthropicData = await anthropicResponse.json();
+      const rawText = anthropicData.content[0].text;
+      console.log('Claude raw response:', rawText);
+
       try {
-        const parsed = JSON.parse(chatgptData.choices[0].message.content);
-        chatgptSongs = parsed.songs || [];
+        // Strip markdown code blocks if Claude adds them
+        const jsonText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(jsonText);
+        claudeSongs = parsed.songs || [];
         aiTitle = parsed.title || null;
-        usedChatGPT = true;
-        console.log('ChatGPT parsed songs:', chatgptSongs.length);
-        console.log('AI generated title:', aiTitle);
-        console.log('Parsed object keys:', Object.keys(parsed));
+        console.log('Claude parsed songs:', claudeSongs.length);
+        console.log('AI title:', aiTitle);
       } catch (e) {
-        console.log('Failed to parse ChatGPT response:', e.message);
-        console.log('ChatGPT response content:', chatgptData.choices[0].message.content);
+        console.log('Failed to parse Claude response:', e.message);
+        console.log('Raw response was:', rawText);
       }
     } else {
-      console.log('ChatGPT API failed:', openaiResponse.status, await openaiResponse.text());
+      const errorText = await anthropicResponse.text();
+      console.log('Anthropic API error:', anthropicResponse.status, errorText);
     }
 
-    // Search for songs on Spotify
-    const foundSongs = [];
-    const searchPromises = chatgptSongs.slice(0, 20).map(async (song) => {
+    // Search for each song on Spotify
+    const searchPromises = claudeSongs.slice(0, 20).map(async (song) => {
       try {
-        const searchQuery = encodeURIComponent(`${song.name} ${song.artist}`);
-        const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=${searchQuery}&type=track&limit=1`, {
-          headers: {
-            'Authorization': `Bearer ${access_token}`
-          }
-        });
+        // Use field filters for more precise matching
+        const searchQuery = encodeURIComponent(`track:${song.name} artist:${song.artist}`);
+        const searchResponse = await fetch(
+          `https://api.spotify.com/v1/search?q=${searchQuery}&type=track&limit=3`,
+          { headers: { 'Authorization': `Bearer ${access_token}` } }
+        );
 
         if (searchResponse.ok) {
           const searchData = await searchResponse.json();
           if (searchData.tracks.items.length > 0) {
-            const track = searchData.tracks.items[0];
-            
-            // Skip if user already knows this song well
-            if (avoidSongs.has(track.id)) {
-              console.log('Skipping known song:', track.name, 'by', track.artists[0].name);
-              return null;
-            }
-            
-            // Skip mega-hit songs (above 85 popularity) but allow some popular tracks
-            if (track.popularity > 85) {
-              console.log('Skipping mega-hit song:', track.name, 'by', track.artists[0].name, '(popularity:', track.popularity + ')');
-              return null;
-            }
-            
+            // Prefer a track the user hasn't heard
+            const track =
+              searchData.tracks.items.find(t => !avoidSongIds.has(t.id)) ||
+              searchData.tracks.items[0];
+
+            if (avoidSongIds.has(track.id)) return null;
+
             return {
               name: track.name,
               artist: track.artists[0].name,
@@ -160,8 +164,10 @@ Create exactly 20 songs following all rules above.`
               preview_url: track.preview_url,
               external_url: track.external_urls.spotify,
               popularity: track.popularity,
-              year: track.album.release_date ? new Date(track.album.release_date).getFullYear() : null,
-              chatgpt_reason: song.reason
+              year: track.album.release_date
+                ? new Date(track.album.release_date).getFullYear()
+                : null,
+              reason: song.reason
             };
           }
         }
@@ -171,89 +177,42 @@ Create exactly 20 songs following all rules above.`
       return null;
     });
 
-    const searchResults = await Promise.all(searchPromises);
-    foundSongs.push(...searchResults.filter(song => song !== null));
-
-    // If no ChatGPT songs found, do a fallback search
-    if (foundSongs.length === 0) {
-      const fallbackResponse = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(prompt)}&type=track&limit=20`, {
-        headers: {
-          'Authorization': `Bearer ${access_token}`
-        }
-      });
-
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        foundSongs.push(...fallbackData.tracks.items.map(track => ({
-          name: track.name,
-          artist: track.artists[0].name,
-          spotify_id: track.id,
-          preview_url: track.preview_url,
-          external_url: track.external_urls.spotify,
-          popularity: track.popularity,
-          year: track.album.release_date ? new Date(track.album.release_date).getFullYear() : null
-        })));
-      }
-    }
+    const foundSongs = (await Promise.all(searchPromises)).filter(Boolean);
 
     if (foundSongs.length === 0) {
       return Response.json({
         success: false,
         message: 'No songs found for your prompt',
-        prompt: prompt,
-        songs: [],
-        used_chatgpt: usedChatGPT
+        prompt,
+        songs: []
       });
     }
 
     if (foundSongs.length < 5) {
       return Response.json({
         success: false,
-        message: `Only found ${foundSongs.length} songs - need at least 5 for a good playlist`,
-        prompt: prompt,
-        songs: foundSongs,
-        used_chatgpt: usedChatGPT
+        message: `Only found ${foundSongs.length} songs — need at least 5 for a good playlist`,
+        prompt,
+        songs: foundSongs
       });
     }
 
     console.log('Found', foundSongs.length, 'songs for playlist');
 
-    // Test if we have playlist creation permissions
-    const testResponse = await fetch('https://api.spotify.com/v1/me', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
-    });
-    
-    if (!testResponse.ok) {
-      return Response.json({
-        success: false,
-        message: 'Token validation failed',
-        error: await testResponse.text()
-      }, { status: 401 });
-    }
+    // Create the playlist
+    const playlistName = aiTitle || `Discovery: ${prompt.slice(0, 40)}`;
 
-    // Create playlist
-    const playlistName = aiTitle || `AI Discovery: ${prompt.slice(0, 40)}...`;
-    console.log('Creating playlist for user:', userProfile.id);
-    console.log('Playlist name:', playlistName);
-    console.log('AI-generated title:', aiTitle);
-    
-    const playlistBody = {
-      name: playlistName,
-      description: "🎵 AI-curated discovery playlist with hidden gems and familiar favorites",
-      public: false
-    };
-    
-    console.log('Playlist request body:', JSON.stringify(playlistBody, null, 2));
-    
     const createPlaylistResponse = await fetch(`https://api.spotify.com/v1/me/playlists`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(playlistBody)
+      body: JSON.stringify({
+        name: playlistName,
+        description: '🎵 Curated by AI — all new music, zero algorithm',
+        public: false
+      })
     });
 
     if (!createPlaylistResponse.ok) {
@@ -263,16 +222,13 @@ Create exactly 20 songs following all rules above.`
         success: false,
         message: 'Found songs but failed to create playlist',
         error: errorText,
-        status: createPlaylistResponse.status,
-        prompt: prompt,
-        songs: foundSongs,
-        used_chatgpt: usedChatGPT
+        songs: foundSongs
       });
     }
 
     const playlist = await createPlaylistResponse.json();
 
-    // Add tracks to playlist
+    // Add tracks to the playlist
     const trackUris = foundSongs.map(song => `spotify:track:${song.spotify_id}`);
     await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
       method: 'POST',
@@ -280,19 +236,16 @@ Create exactly 20 songs following all rules above.`
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        uris: trackUris
-      })
+      body: JSON.stringify({ uris: trackUris })
     });
 
     return Response.json({
       success: true,
-      message: `Successfully created playlist with ${foundSongs.length} songs!`,
-      prompt: prompt,
+      message: `Successfully created "${playlistName}" with ${foundSongs.length} songs!`,
+      prompt,
       songs: foundSongs,
       playlist_id: playlist.id,
-      playlist_url: playlist.external_urls.spotify,
-      used_chatgpt: usedChatGPT
+      playlist_url: playlist.external_urls.spotify
     });
 
   } catch (error) {
