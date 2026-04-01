@@ -22,6 +22,41 @@ export async function POST(request) {
     }
 
     const userProfile = await userResponse.json();
+    const spotifyUserId = userProfile.id;
+    const userEmail = userProfile.email || '';
+
+    // --- Admin check ---
+    const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
+    const isAdmin = adminEmails.includes(userEmail.toLowerCase());
+
+    // --- Usage tracking + freemium gate ---
+    const freeLimit = parseInt(process.env.FREE_PLAYLIST_LIMIT || '3', 10);
+
+    if (!isAdmin) {
+      // Upsert user record and get current count
+      const { data: userRecord, error: upsertError } = await supabase
+        .from('users')
+        .upsert({ id: spotifyUserId, email: userEmail }, { onConflict: 'id' })
+        .select('playlist_count, free_credits, is_subscribed, credits')
+        .single();
+
+      if (!upsertError && userRecord) {
+        const hasSubscription = userRecord.is_subscribed;
+        const paidCredits = userRecord.credits || 0;
+        const freeUsed = userRecord.playlist_count || 0;
+        const freeRemaining = Math.max(0, freeLimit - freeUsed);
+
+        if (!hasSubscription && paidCredits === 0 && freeRemaining === 0) {
+          return Response.json({
+            success: false,
+            paywall: true,
+            message: `You've used your ${freeLimit} free playlists. Subscribe for unlimited or buy a credit pack to keep going.`,
+            playlists_used: freeUsed,
+            free_limit: freeLimit,
+          }, { status: 402 });
+        }
+      }
+    }
 
     // Fetch listening data in parallel
     const [recentTracksResponse, topTracksResponse, topArtistsResponse] = await Promise.all([
@@ -265,12 +300,17 @@ Think deeply about who this person is musically. Then build them something they'
         title: playlistName,
         songs: foundSongs,
         spotify_url: playlist.external_urls.spotify,
-        user_id: null, // will be set once auth is wired up
+        user_id: spotifyUserId,
       });
 
       if (!dbError) {
         shareUrl = `https://www.algorithmssuck.com/playlist/${shareId}`;
         console.log('Saved playlist with share URL:', shareUrl);
+
+        // Increment playlist count for non-admins
+        if (!isAdmin) {
+          await supabase.rpc('increment_playlist_count', { user_id_input: spotifyUserId });
+        }
       } else {
         console.log('Failed to save playlist to DB:', dbError.message);
       }

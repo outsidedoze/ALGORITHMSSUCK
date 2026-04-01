@@ -93,6 +93,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0])
   const [playlistResult, setPlaylistResult] = useState<PlaylistResult | null>(null)
+  const [showPaywall, setShowPaywall] = useState(false)
 
   useEffect(() => {
     if (!isLoading) return
@@ -154,13 +155,19 @@ export default function HomePage() {
 
       const data = await response.json()
       console.log('Playlist generation response:', data)
+
+      if (data.paywall) {
+        setShowPaywall(true)
+        return
+      }
       if (!response.ok) {
         alert('Error generating playlist: ' + (data.error || data.message || response.statusText || 'Unknown error'))
         return
       }
       if (data.success) {
         setPlaylistResult(data)
-        setPrompt('') // Clear the prompt after successful generation
+        setShowPaywall(false)
+        setPrompt('')
       } else {
         alert('Error generating playlist: ' + (data.error || data.message || 'Unknown error'))
       }
@@ -248,6 +255,24 @@ export default function HomePage() {
               </div>
               <p className="text-white font-medium text-lg transition-all duration-500">{loadingMessage}</p>
               <p className="text-gray-500 text-sm mt-2">This takes 10–20 seconds. Real taste takes time.</p>
+            </div>
+          )}
+
+          {/* Paywall */}
+          {showPaywall && (
+            <div className="mt-8 p-8 bg-gray-950 rounded-lg text-center">
+              <p className="text-3xl mb-3">🎵</p>
+              <h3 className="text-white text-xl font-bold mb-2">You&apos;ve used your 3 free playlists</h3>
+              <p className="text-gray-400 mb-6">Subscribe for unlimited discovery, or grab a credit pack if you just need a few more.</p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button className="px-6 py-3 bg-green-600 text-white rounded-full font-semibold hover:bg-green-500 transition-colors">
+                  Subscribe — $4.99/month
+                </button>
+                <button className="px-6 py-3 bg-white/10 text-white rounded-full font-semibold hover:bg-white/20 transition-colors">
+                  Buy credits — 10 for $3
+                </button>
+              </div>
+              <p className="text-gray-600 text-xs mt-4">Payments coming soon — check back shortly.</p>
             </div>
           )}
 
