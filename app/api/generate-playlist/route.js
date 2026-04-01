@@ -1,3 +1,5 @@
+import { supabase, generateShareId } from '@/lib/supabase'
+
 export async function POST(request) {
   try {
     const data = await request.json();
@@ -253,13 +255,37 @@ Think deeply about who this person is musically. Then build them something they'
       body: JSON.stringify({ uris: trackUris })
     });
 
+    // Save to Supabase for shareable link
+    let shareUrl = null;
+    try {
+      const shareId = generateShareId();
+      const { error: dbError } = await supabase.from('playlists').insert({
+        share_id: shareId,
+        prompt,
+        title: playlistName,
+        songs: foundSongs,
+        spotify_url: playlist.external_urls.spotify,
+        user_id: null, // will be set once auth is wired up
+      });
+
+      if (!dbError) {
+        shareUrl = `https://www.algorithmssuck.com/playlist/${shareId}`;
+        console.log('Saved playlist with share URL:', shareUrl);
+      } else {
+        console.log('Failed to save playlist to DB:', dbError.message);
+      }
+    } catch (dbErr) {
+      console.log('DB save error (non-fatal):', dbErr.message);
+    }
+
     return Response.json({
       success: true,
       message: `Successfully created "${playlistName}" with ${foundSongs.length} songs!`,
       prompt,
       songs: foundSongs,
       playlist_id: playlist.id,
-      playlist_url: playlist.external_urls.spotify
+      playlist_url: playlist.external_urls.spotify,
+      share_url: shareUrl,
     });
 
   } catch (error) {

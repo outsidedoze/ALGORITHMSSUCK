@@ -21,6 +21,7 @@ interface PlaylistResult {
   songs: Song[];
   playlist_id?: string;
   playlist_url?: string;
+  share_url?: string;
   used_ai: boolean;
 }
 
@@ -277,20 +278,40 @@ export default function HomePage() {
                  <strong>Prompt:</strong> {playlistResult.prompt}
                </p>
                
-               {/* Playlist Link */}
-               {playlistResult.playlist_url && (
-                 <div className="mb-4 p-4 bg-white rounded border">
-                   <h4 className="font-medium text-green-800 mb-2">🎵 Your Playlist Has Been Created!</h4>
-                   <a
-                     href={playlistResult.playlist_url}
-                     target="_blank"
-                     rel="noopener noreferrer"
-                     className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                   >
-                     Open Playlist in Spotify →
-                   </a>
+               {/* Playlist Links */}
+               <div className="mb-4 p-4 bg-white rounded border space-y-3">
+                 <h4 className="font-medium text-green-800 mb-2">Your playlist is ready.</h4>
+                 <div className="flex flex-wrap gap-3">
+                   {playlistResult.playlist_url && (
+                     <a
+                       href={playlistResult.playlist_url}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+                     >
+                       Open in Spotify →
+                     </a>
+                   )}
+                   {playlistResult.share_url && (
+                     <button
+                       onClick={() => {
+                         navigator.clipboard.writeText(playlistResult.share_url || '')
+                         const btn = document.getElementById('copy-share-btn')
+                         if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy share link' }, 2000) }
+                       }}
+                       id="copy-share-btn"
+                       className="inline-flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm"
+                     >
+                       Copy share link
+                     </button>
+                   )}
                  </div>
-               )}
+                 {playlistResult.share_url && (
+                   <p className="text-xs text-gray-500">
+                     Share this playlist: <a href={playlistResult.share_url} className="text-green-600 hover:underline">{playlistResult.share_url}</a>
+                   </p>
+                 )}
+               </div>
                
                <div className="space-y-2">
                  <h4 className="font-medium text-green-800">Songs Added:</h4>
