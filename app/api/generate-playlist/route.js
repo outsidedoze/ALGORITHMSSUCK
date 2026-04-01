@@ -1,7 +1,14 @@
 import { supabase, generateShareId } from '@/lib/supabase'
+import { auth } from '@clerk/nextjs/server'
 
 export async function POST(request) {
   try {
+    // Get Clerk user ID for identity/billing
+    const { userId: clerkUserId } = await auth()
+    if (!clerkUserId) {
+      return Response.json({ error: 'Unauthorized', success: false }, { status: 401 })
+    }
+
     const data = await request.json();
     const { prompt, access_token } = data;
 
@@ -12,7 +19,7 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Get user profile
+    // Get user profile from Spotify (for taste data + email for admin check)
     const userResponse = await fetch('https://api.spotify.com/v1/me', {
       headers: { 'Authorization': `Bearer ${access_token}` }
     });
@@ -22,21 +29,21 @@ export async function POST(request) {
     }
 
     const userProfile = await userResponse.json();
-    const spotifyUserId = userProfile.id;
+    const spotifyUserId = userProfile.id; // used only for Spotify API calls
     const userEmail = userProfile.email || '';
 
-    // --- Admin check ---
+    // --- Admin check (by email) ---
     const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
     const isAdmin = adminEmails.includes(userEmail.toLowerCase());
 
-    // --- Usage tracking + freemium gate ---
+    // --- Usage tracking + freemium gate (keyed on Clerk user ID) ---
     const freeLimit = parseInt(process.env.FREE_PLAYLIST_LIMIT || '3', 10);
 
     if (!isAdmin) {
-      // Upsert user record and get current count
+      // Upsert user record keyed on Clerk user ID
       const { data: userRecord, error: upsertError } = await supabase
         .from('users')
-        .upsert({ id: spotifyUserId, email: userEmail }, { onConflict: 'id' })
+        .upsert({ id: clerkUserId, email: userEmail }, { onConflict: 'id' })
         .select('playlist_count, free_credits, is_subscribed, credits')
         .single();
 
@@ -300,7 +307,7 @@ Think deeply about who this person is musically. Then build them something they'
         title: playlistName,
         songs: foundSongs,
         spotify_url: playlist.external_urls.spotify,
-        user_id: spotifyUserId,
+        user_id: clerkUserId,
       });
 
       if (!dbError) {
@@ -309,7 +316,7 @@ Think deeply about who this person is musically. Then build them something they'
 
         // Increment playlist count for non-admins
         if (!isAdmin) {
-          await supabase.rpc('increment_playlist_count', { user_id_input: spotifyUserId });
+          await supabase.rpc('increment_playlist_count', { user_id_input: clerkUserId });
         }
       } else {
         console.log('Failed to save playlist to DB:', dbError.message);
