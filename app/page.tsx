@@ -72,12 +72,37 @@ async function handleLogin() {
   window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`
 }
 
+const LOADING_MESSAGES = [
+  'Digging through the crates...',
+  'Following the thread...',
+  'Making connections you won\'t expect...',
+  'Tracing the lineage...',
+  'Finding what the algorithm buried...',
+  'Consulting 70 years of music history...',
+  'Looking beyond the obvious...',
+  'Pulling from scenes you\'ve never heard of...',
+  'Almost there — this one takes real thought...',
+  'Your curator is on it...',
+]
+
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0])
   const [playlistResult, setPlaylistResult] = useState<PlaylistResult | null>(null)
+
+  useEffect(() => {
+    if (!isLoading) return
+    setLoadingMessage(LOADING_MESSAGES[0])
+    let i = 1
+    const interval = setInterval(() => {
+      setLoadingMessage(LOADING_MESSAGES[i % LOADING_MESSAGES.length])
+      i++
+    }, 2500)
+    return () => clearInterval(interval)
+  }, [isLoading])
 
   useEffect(() => {
     const accessToken = localStorage.getItem('access_token')
@@ -202,9 +227,28 @@ export default function HomePage() {
               disabled={isLoading || !prompt.trim()}
               className="w-full bg-green-500 text-white py-3 px-6 rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-semibold"
             >
-              {isLoading ? 'Generating Playlist...' : 'Generate Playlist'}
+              {isLoading ? 'Find My Music' : 'Find My Music'}
             </button>
           </div>
+
+          {/* Loading state */}
+          {isLoading && (
+            <div className="mt-8 p-8 bg-gray-950 rounded-lg text-center">
+              <div className="flex justify-center mb-4">
+                <div className="flex space-x-1">
+                  {[0,1,2,3,4].map(i => (
+                    <div
+                      key={i}
+                      className="w-1.5 bg-green-400 rounded-full animate-bounce"
+                      style={{ height: `${16 + (i % 3) * 8}px`, animationDelay: `${i * 0.1}s` }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="text-white font-medium text-lg transition-all duration-500">{loadingMessage}</p>
+              <p className="text-gray-500 text-sm mt-2">This takes 10–20 seconds. Real taste takes time.</p>
+            </div>
+          )}
 
           {/* Example prompts */}
           <div className="mt-8">

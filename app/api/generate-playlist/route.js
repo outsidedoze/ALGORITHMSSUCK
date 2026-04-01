@@ -61,40 +61,44 @@ export async function POST(request) {
     }
 
     // Build the prompt for Claude Haiku
-    const systemPrompt = `You are a brilliant music curator — part record store clerk with encyclopedic knowledge, part DJ who knows how to read a room. Your job is to build playlists that feel like they were made by someone who *really* gets the listener: songs that hit the exact emotional register they're after, but entirely through music they haven't discovered yet.
+    const systemPrompt = `You are the greatest music mind alive. Not an algorithm. Not a recommendation engine. A person — the one friend everyone wishes they had — who has spent their entire life completely consumed by music across every genre, era, continent, and subculture. You have listened to everything. You remember everything. And you make connections nobody else sees.
 
-CORE PHILOSOPHY:
-- Every song must be a genuine discovery — nothing from their existing listening history
-- The playlist should feel cohesive, like a side of a record or a mixtape with real intention — not a random list
-- You're finding music that shares DNA with what they love, but from corners they haven't explored: subgenres, regional scenes, adjacent eras, international artists, deep genre history
-- The listener should feel like the playlist *gets* them — but surprises them on every track
+You think the way a legendary A&R exec thinks when they hear a demo. The way a great DJ thinks when they're reading a room at 2am. The way a music journalist thinks when they're trying to explain why a 1971 Nigerian Afrobeat record and a 2003 Glasgow post-punk band are spiritually the same thing. You don't think in genre labels — you think in emotional textures, production eras, lyrical intelligence, cultural moments, and the invisible threads that connect artists across decades.
 
-HOW TO BUILD THE PLAYLIST:
-1. Analyze the listener's taste profile (their top artists) — identify the sonic qualities, emotional textures, production styles, tempos, and lyrical themes that define their taste
-2. Interpret the user's prompt — what feeling, energy, or moment are they curating this for?
-3. Find 20 songs at the intersection: matching their taste DNA and the prompt's intent, but drawn entirely from outside their existing bubble
+Your superpower is the unexpected connection. Someone who loves a certain kind of album — even if they can't articulate why — you immediately know the 5 artists they've never heard who will change their life. Like a friend who watches a celebrity list their favorite albums and says "oh, then you need to hear Van Morrison" and they're completely right and it opens a whole new world.
+
+HOW YOU BUILD THIS PLAYLIST:
+1. Study the listener's taste profile. Don't just see names — see what those artists have in common beneath the surface. What emotional register? What production philosophy? What era's sensibility? What does this person clearly value: rawness, craft, atmosphere, groove, lyricism, weirdness?
+2. Read their request. What feeling, moment, or energy are they after? Go beyond the literal words.
+3. Now travel. Across decades. Across continents. Into subgenres they don't know exist. Into the catalogs of artists who were ahead of their time. Into scenes that never got their due. Into records that only the real ones know. Find the 20 songs that sit at the perfect intersection of who this person is and what they're asking for — but that they have never, ever heard.
+
+THE STANDARD:
+- Every track should feel like a revelation. The "how did I not know this existed" feeling.
+- The playlist flows like a great mixtape — it has shape, arc, intention. Not a random list.
+- Wildly varied in era, geography, and subgenre, but emotionally coherent throughout.
+- Pull from overlooked classics, regional scenes that never crossed over, critically acclaimed artists who flew under the radar, deep cuts from legendary careers, international artists who deserve a global audience.
+- Never play it safe. A playlist full of obvious picks is a failure.
 
 RULES:
 - Exactly 20 songs
-- Never include an artist from their top artists or recently played list
+- Never include any artist from their known rotation (top artists or recently played)
 - Never repeat artists within the playlist
-- Vary era, geography, and subgenre — don't just pick 20 versions of the same sound
-- If a time period is mentioned ("90s", "80s", etc.), be strict — "90s" means 1990–1999 only
-- Every song must actually exist and be findable on major streaming platforms — no hallucinations, no made-up tracks
-- Write a witty, specific playlist title that nails the vibe — make it feel earned, not generic
+- If a time period is mentioned ("90s", "80s", etc.) be strict — "90s" = 1990–1999 only
+- Every song must actually exist on major streaming platforms — no hallucinations
+- The playlist title should be sharp, specific, and earned — the kind of title that makes someone want to press play immediately
 
 Return valid JSON only, no markdown, no other text:
-{"title": "Playlist Title Here", "songs": [{"name": "Song Name", "artist": "Artist Name", "reason": "One sentence on why this fits perfectly"}]}`;
+{"title": "Playlist Title Here", "songs": [{"name": "Song Name", "artist": "Artist Name", "reason": "One vivid sentence on the connection — what makes this the right song for this person right now"}]}`;
 
-    const userPrompt = `The listener's top artists (their taste profile):
+    const userPrompt = `This listener's musical DNA — their most-played artists:
 ${tasteProfileArtists.length > 0 ? tasteProfileArtists.join(', ') : 'Not available'}
 
-Artists to avoid entirely (already in their rotation):
+Artists to avoid entirely (already in their world):
 ${Array.from(avoidArtistNames).slice(0, 40).join(', ')}
 
-Their request: "${prompt}"
+What they're asking for: "${prompt}"
 
-Build the perfect 20-song discovery playlist. Return JSON only.`;
+Think deeply about who this person is musically. Then build them something they'll never forget. Return JSON only.`;
 
     // Call Claude Haiku via Anthropic API
     const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -140,36 +144,46 @@ Build the perfect 20-song discovery playlist. Return JSON only.`;
     // Search for each song on Spotify
     const searchPromises = claudeSongs.slice(0, 20).map(async (song) => {
       try {
-        // Use field filters for more precise matching
-        const searchQuery = encodeURIComponent(`track:${song.name} artist:${song.artist}`);
-        const searchResponse = await fetch(
-          `https://api.spotify.com/v1/search?q=${searchQuery}&type=track&limit=3`,
+        // Helper to extract a result from a search response
+        const extractTrack = (items) => {
+          if (!items || items.length === 0) return null;
+          const track = items.find(t => !avoidSongIds.has(t.id)) || items[0];
+          if (avoidSongIds.has(track.id)) return null;
+          return {
+            name: track.name,
+            artist: track.artists[0].name,
+            spotify_id: track.id,
+            preview_url: track.preview_url,
+            external_url: track.external_urls.spotify,
+            popularity: track.popularity,
+            year: track.album.release_date
+              ? new Date(track.album.release_date).getFullYear()
+              : null,
+            reason: song.reason
+          };
+        };
+
+        // First try: strict field filter search
+        const strictQuery = encodeURIComponent(`track:${song.name} artist:${song.artist}`);
+        const strictResponse = await fetch(
+          `https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=3`,
           { headers: { 'Authorization': `Bearer ${access_token}` } }
         );
+        if (strictResponse.ok) {
+          const strictData = await strictResponse.json();
+          const result = extractTrack(strictData.tracks.items);
+          if (result) return result;
+        }
 
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          if (searchData.tracks.items.length > 0) {
-            // Prefer a track the user hasn't heard
-            const track =
-              searchData.tracks.items.find(t => !avoidSongIds.has(t.id)) ||
-              searchData.tracks.items[0];
-
-            if (avoidSongIds.has(track.id)) return null;
-
-            return {
-              name: track.name,
-              artist: track.artists[0].name,
-              spotify_id: track.id,
-              preview_url: track.preview_url,
-              external_url: track.external_urls.spotify,
-              popularity: track.popularity,
-              year: track.album.release_date
-                ? new Date(track.album.release_date).getFullYear()
-                : null,
-              reason: song.reason
-            };
-          }
+        // Fallback: plain text search (more forgiving of special chars / slight name differences)
+        const looseQuery = encodeURIComponent(`${song.name} ${song.artist}`);
+        const looseResponse = await fetch(
+          `https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=5`,
+          { headers: { 'Authorization': `Bearer ${access_token}` } }
+        );
+        if (looseResponse.ok) {
+          const looseData = await looseResponse.json();
+          return extractTrack(looseData.tracks.items);
         }
       } catch (error) {
         console.error('Error searching for song:', song, error);
