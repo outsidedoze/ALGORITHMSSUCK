@@ -55,6 +55,40 @@ async function generateCodeChallenge(verifier: string) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// Silently refresh the Spotify access token using the stored refresh token.
+// Returns the new access token, or null if refresh failed.
+async function refreshSpotifyToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('refresh_token')
+  if (!refreshToken) return null
+
+  try {
+    const payload = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: '2ee0d98b21d048978bf73d78924daf91',
+    })
+
+    const res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: payload.toString(),
+    })
+
+    if (!res.ok) return null
+
+    const data = await res.json()
+    if (!data.access_token) return null
+
+    localStorage.setItem('access_token', data.access_token)
+    if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token)
+    if (data.expires_in) localStorage.setItem('token_expires_at', String(Date.now() + data.expires_in * 1000))
+
+    return data.access_token
+  } catch {
+    return null
+  }
+}
+
 function Slider({ label, leftLabel, rightLabel, value, onChange }: {
   label: string; leftLabel: string; rightLabel: string; value: number; onChange: (v: number) => void
 }) {
@@ -102,8 +136,20 @@ export default function HomePage() {
   const [feedback, setFeedback] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (token) setSpotifyToken(token)
+    const init = async () => {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+
+      // Proactively refresh if token expires within the next 5 minutes
+      const expiresAt = Number(localStorage.getItem('token_expires_at') || 0)
+      if (expiresAt && Date.now() > expiresAt - 5 * 60 * 1000) {
+        const newToken = await refreshSpotifyToken()
+        setSpotifyToken(newToken || token)
+      } else {
+        setSpotifyToken(token)
+      }
+    }
+    init()
   }, [])
 
   useEffect(() => {
@@ -154,6 +200,19 @@ export default function HomePage() {
     setSpotifyToken(null)
   }
 
+  const callGenerateAPI = async (token: string) => {
+    return fetch('/api/generate-playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt, access_token: token,
+        mode_slider: modeSlider,
+        era_slider: eraSlider,
+        obscurity_slider: obscuritySlider,
+      }),
+    })
+  }
+
   const handleGeneratePlaylist = async () => {
     if (!prompt.trim() || !spotifyToken) return
     setIsLoading(true)
@@ -161,17 +220,28 @@ export default function HomePage() {
     setFeedback({})
 
     try {
-      const response = await fetch('/api/generate-playlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt, access_token: spotifyToken,
-          mode_slider: modeSlider,
-          era_slider: eraSlider,
-          obscurity_slider: obscuritySlider,
-        }),
-      })
-      const data = await response.json()
+      let token = spotifyToken
+      let response = await callGenerateAPI(token)
+      let data = await response.json()
+
+      // If token expired, silently refresh and retry once
+      if (data.token_expired) {
+        const newToken = await refreshSpotifyToken()
+        if (newToken) {
+          setSpotifyToken(newToken)
+          token = newToken
+          response = await callGenerateAPI(token)
+          data = await response.json()
+        } else {
+          // Refresh failed — need full reconnect
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          localStorage.removeItem('token_expires_at')
+          setSpotifyToken(null)
+          return
+        }
+      }
+
       if (data.paywall) { setShowPaywall(true); return }
       if (!response.ok) { alert('Error: ' + (data.error || data.message || 'Unknown error')); return }
       if (data.success) {

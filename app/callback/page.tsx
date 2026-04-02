@@ -57,6 +57,12 @@ export default function CallbackPage() {
         console.log('Response data:', data)
         if (data.access_token) {
           localStorage.setItem('access_token', data.access_token)
+          if (data.refresh_token) {
+            localStorage.setItem('refresh_token', data.refresh_token)
+          }
+          if (data.expires_in) {
+            localStorage.setItem('token_expires_at', String(Date.now() + data.expires_in * 1000))
+          }
           router.push('/')
         } else {
           console.error('Error retrieving access token:', data)

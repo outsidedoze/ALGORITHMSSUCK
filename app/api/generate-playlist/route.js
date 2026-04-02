@@ -26,7 +26,12 @@ export async function POST(request) {
       headers: { 'Authorization': `Bearer ${access_token}` }
     })
     if (!userResponse.ok) {
-      return Response.json({ error: 'Failed to get user profile', success: false }, { status: 401 })
+      const isExpired = userResponse.status === 401
+      return Response.json({
+        success: false,
+        token_expired: isExpired,
+        error: isExpired ? 'spotify_token_expired' : 'Failed to get user profile'
+      }, { status: 401 })
     }
     const userProfile = await userResponse.json()
     const spotifyUserId = userProfile.id
