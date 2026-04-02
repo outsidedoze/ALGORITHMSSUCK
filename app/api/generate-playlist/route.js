@@ -374,6 +374,8 @@ Read the taste profile carefully. Understand who this person is. Then build 20 t
             year: track.album.release_date
               ? new Date(track.album.release_date).getFullYear()
               : null,
+            album_image: track.album.images?.[1]?.url || track.album.images?.[0]?.url || null,
+            album_name: track.album.name || null,
             reason: song.reason
           }
         }
@@ -466,6 +468,7 @@ Read the taste profile carefully. Understand who this person is. Then build 20 t
     return Response.json({
       success: true,
       message: `Successfully created "${playlistName}" with ${foundSongs.length} songs!`,
+      title: playlistName,
       prompt,
       songs: foundSongs,
       playlist_id: playlist.id,
