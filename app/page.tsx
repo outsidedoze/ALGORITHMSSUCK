@@ -290,7 +290,8 @@ export default function HomePage() {
   const needsOnboarding = favoriteArtists.length === 0 || editingTaste
 
   if (needsOnboarding) {
-    const canContinue = favoriteArtists.length >= 3
+    const MIN_ARTISTS = 5
+    const canContinue = favoriteArtists.length >= MIN_ARTISTS
     return (
       <main className="min-h-screen bg-gray-950 text-white">
         <div className="max-w-xl mx-auto px-6 py-16">
@@ -299,8 +300,8 @@ export default function HomePage() {
             {editingTaste && favoriteArtists.length > 0 ? 'Your taste' : 'Who do you love?'}
           </h1>
           <p className="text-gray-400 mb-8">
-            Name a few artists you genuinely love — the ones you&apos;d mention to a friend in a record store.
-            Not what you play most. What you&apos;d defend. Three minimum, more is better.
+            Name the artists you genuinely love — the ones you&apos;d mention to a friend in a record store.
+            Not what you play most. What you&apos;d defend. Add as many as you like, five minimum.
           </p>
 
           <div className="relative mb-4">
@@ -308,7 +309,15 @@ export default function HomePage() {
               type="text"
               value={artistQuery}
               onChange={(e) => setArtistQuery(e.target.value)}
-              placeholder="Search for an artist..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  // Prefer the top suggestion; otherwise take the raw typed name
+                  const pick = suggestions[0]?.name || artistQuery.trim()
+                  if (pick) addArtist(pick)
+                }
+              }}
+              placeholder="Type an artist name, then press Enter"
               className="w-full px-5 py-4 bg-gray-900 border border-gray-800 rounded-2xl text-white placeholder-gray-600 focus:outline-none focus:border-green-700 text-base"
             />
             {searching && (
@@ -367,9 +376,9 @@ export default function HomePage() {
               disabled={!canContinue || savingTaste}
               className="px-6 py-3 bg-green-600 text-white rounded-full hover:bg-green-500 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors font-semibold"
             >
-              {savingTaste ? 'Saving...' : canContinue ? 'Continue' : `Add ${3 - favoriteArtists.length} more`}
+              {savingTaste ? 'Saving...' : canContinue ? 'Continue' : `Add ${MIN_ARTISTS - favoriteArtists.length} more`}
             </button>
-            {editingTaste && favoriteArtists.length >= 3 && (
+            {editingTaste && favoriteArtists.length >= MIN_ARTISTS && (
               <button onClick={() => setEditingTaste(false)} className="text-gray-600 hover:text-gray-400 text-sm transition-colors">
                 Cancel
               </button>
