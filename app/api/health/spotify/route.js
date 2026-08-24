@@ -3,7 +3,22 @@ import { getAppToken, spotifySearch } from '@/lib/spotify'
 // Diagnostic endpoint. Reports whether the Spotify client-credentials
 // flow works, without ever exposing the credentials themselves.
 export async function GET() {
+  const rawId = process.env.SPOTIFY_CLIENT_ID || ''
+  const rawSecret = process.env.SPOTIFY_CLIENT_SECRET || ''
+
   const report = {
+    // Client ID is public information, safe to echo. The secret is only
+    // described by length and last 4 chars — never printed in full.
+    credentials: {
+      client_id_value: rawId.trim() || 'MISSING',
+      client_id_has_whitespace: rawId !== rawId.trim(),
+      client_id_length: rawId.trim().length,
+      secret_length: rawSecret.trim().length,
+      secret_last4: rawSecret.trim().slice(-4) || 'MISSING',
+      secret_has_whitespace: rawSecret !== rawSecret.trim(),
+      expected_id: '2ee0d98b21d048978bf73d78924daf91',
+      id_matches_expected: rawId.trim() === '2ee0d98b21d048978bf73d78924daf91',
+    },
     env: {
       SPOTIFY_CLIENT_ID: process.env.SPOTIFY_CLIENT_ID ? 'present' : 'MISSING',
       SPOTIFY_CLIENT_SECRET: process.env.SPOTIFY_CLIENT_SECRET ? 'present' : 'MISSING',
