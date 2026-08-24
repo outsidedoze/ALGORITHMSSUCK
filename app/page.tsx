@@ -33,6 +33,8 @@ interface ArtistSuggestion {
   genres: string[]
 }
 
+const MIN_ARTISTS = 5
+
 const LOADING_MESSAGES = [
   'Digging through the crates...',
   'Following the thread...',
@@ -71,6 +73,9 @@ export default function HomePage() {
   // Taste profile
   const [tasteLoaded, setTasteLoaded] = useState(false)
   const [favoriteArtists, setFavoriteArtists] = useState<string[]>([])
+  // Tracks whether a complete taste profile has been SAVED, as distinct from
+  // the working draft. Without this, adding one artist would exit onboarding.
+  const [hasSavedTaste, setHasSavedTaste] = useState(false)
   const [editingTaste, setEditingTaste] = useState(false)
   const [artistQuery, setArtistQuery] = useState('')
   const [suggestions, setSuggestions] = useState<ArtistSuggestion[]>([])
@@ -104,7 +109,9 @@ export default function HomePage() {
     fetch('/api/taste')
       .then(r => r.json())
       .then(d => {
-        setFavoriteArtists(d.favorite_artists || [])
+        const saved = d.favorite_artists || []
+        setFavoriteArtists(saved)
+        setHasSavedTaste(saved.length >= MIN_ARTISTS)
         setTasteLoaded(true)
       })
       .catch(() => setTasteLoaded(true))
@@ -169,6 +176,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ favorite_artists: favoriteArtists }),
       })
+      setHasSavedTaste(true)
       setEditingTaste(false)
     } finally {
       setSavingTaste(false)
@@ -287,10 +295,9 @@ export default function HomePage() {
   }
 
   // ── Taste onboarding / editing ─────────────────────────────────────────
-  const needsOnboarding = favoriteArtists.length === 0 || editingTaste
+  const needsOnboarding = !hasSavedTaste || editingTaste
 
   if (needsOnboarding) {
-    const MIN_ARTISTS = 5
     const canContinue = favoriteArtists.length >= MIN_ARTISTS
     return (
       <main className="min-h-screen bg-gray-950 text-white">
@@ -356,17 +363,31 @@ export default function HomePage() {
           </div>
 
           {favoriteArtists.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-8">
-              {favoriteArtists.map(name => (
-                <button
-                  key={name}
-                  onClick={() => removeArtist(name)}
-                  className="group px-3 py-2 bg-gray-900 border border-gray-800 hover:border-red-900 rounded-full text-sm text-gray-300 hover:text-red-400 transition-colors flex items-center gap-2"
-                >
-                  {name}
-                  <span className="text-gray-700 group-hover:text-red-400 transition-colors">✕</span>
-                </button>
-              ))}
+            <div className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <span className="text-gray-400 text-xs font-medium uppercase tracking-wide">
+                  Your artists ({favoriteArtists.length})
+                </span>
+                {!canContinue && (
+                  <span className="text-gray-600 text-xs">
+                    {MIN_ARTISTS - favoriteArtists.length} more to continue
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {favoriteArtists.map(name => (
+                  <button
+                    key={name}
+                    onClick={() => removeArtist(name)}
+                    title="Remove"
+                    className="group px-3 py-2 bg-gray-900 border border-gray-800 hover:border-red-900/70 hover:bg-red-950/20 rounded-full text-sm text-gray-300 hover:text-red-400 transition-colors flex items-center gap-2"
+                  >
+                    {name}
+                    <span className="text-gray-700 group-hover:text-red-400 transition-colors">✕</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-gray-700 text-xs mt-3">Click any artist to remove them.</p>
             </div>
           )}
 
