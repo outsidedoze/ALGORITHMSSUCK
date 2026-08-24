@@ -1,93 +1,50 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useUser, SignInButton, SignOutButton } from '@clerk/nextjs'
 
 interface Song {
   name: string
   artist: string
   spotify_id: string
-  preview_url?: string
+  spotify_uri: string
   external_url: string
-  popularity: number
-  year?: number
-  album_image?: string
-  album_name?: string
+  preview_url?: string | null
+  popularity?: number | null
+  year?: number | null
+  album_image?: string | null
+  album_name?: string | null
   reason?: string
 }
 
 interface PlaylistResult {
   success: boolean
-  message: string
   title?: string
   prompt: string
   songs: Song[]
-  playlist_id?: string
-  playlist_url?: string
-  share_url?: string
+  share_url?: string | null
+  spotify_uris?: string[]
+}
+
+interface ArtistSuggestion {
+  id: string
+  name: string
+  image: string | null
+  genres: string[]
 }
 
 const LOADING_MESSAGES = [
   'Digging through the crates...',
   'Following the thread...',
-  'Reading your musical DNA...',
+  'Reading your taste...',
   'Tracing the lineage...',
   'Finding what the algorithm buried...',
   'Consulting 70 years of music history...',
   'Looking beyond the obvious...',
   "Pulling from scenes you've never heard of...",
-  'Almost there — this one takes real thought...',
+  'Verifying every pick actually exists...',
   'Your curator is on it...',
 ]
-
-async function generateCodeVerifier(length = 128) {
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
-  let text = ''
-  for (let i = 0; i < length; i++) text += possible.charAt(Math.floor(Math.random() * possible.length))
-  return text
-}
-
-async function generateCodeChallenge(verifier: string) {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(verifier)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-// Silently refresh the Spotify access token using the stored refresh token.
-// Returns the new access token, or null if refresh failed.
-async function refreshSpotifyToken(): Promise<string | null> {
-  const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) return null
-
-  try {
-    const payload = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: '2ee0d98b21d048978bf73d78924daf91',
-    })
-
-    const res = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: payload.toString(),
-    })
-
-    if (!res.ok) return null
-
-    const data = await res.json()
-    if (!data.access_token) return null
-
-    localStorage.setItem('access_token', data.access_token)
-    if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token)
-    if (data.expires_in) localStorage.setItem('token_expires_at', String(Date.now() + data.expires_in * 1000))
-
-    return data.access_token
-  } catch {
-    return null
-  }
-}
 
 function Slider({ label, leftLabel, rightLabel, value, onChange }: {
   label: string; leftLabel: string; rightLabel: string; value: number; onChange: (v: number) => void
@@ -96,62 +53,64 @@ function Slider({ label, leftLabel, rightLabel, value, onChange }: {
     <div className="mb-4">
       <span className="text-gray-400 text-xs font-medium uppercase tracking-wide block mb-2">{label}</span>
       <div className="flex items-center gap-3">
-        <span className="text-gray-600 text-xs w-20 text-right leading-tight">{leftLabel}</span>
-        <input type="range" min={0} max={100} value={value} onChange={(e) => onChange(Number(e.target.value))}
-          className="flex-1 h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500" />
-        <span className="text-gray-600 text-xs w-20 leading-tight">{rightLabel}</span>
+        <span className="text-gray-600 text-xs w-24 text-right leading-tight">{leftLabel}</span>
+        <input
+          type="range" min={0} max={100} value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500"
+        />
+        <span className="text-gray-600 text-xs w-24 leading-tight">{rightLabel}</span>
       </div>
     </div>
   )
 }
 
-function PopularityBadge({ popularity }: { popularity: number }) {
-  if (popularity < 30) return <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-400">🔥 Very Obscure</span>
-  if (popularity < 50) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-400">💎 Hidden Gem</span>
-  if (popularity < 70) return <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">⭐ Lesser Known</span>
-  return <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-600">📻 Popular</span>
-}
-
 export default function HomePage() {
   const { isLoaded, isSignedIn, user } = useUser()
-  const [spotifyToken, setSpotifyToken] = useState<string | null>(null)
+
+  // Taste profile
+  const [tasteLoaded, setTasteLoaded] = useState(false)
+  const [favoriteArtists, setFavoriteArtists] = useState<string[]>([])
+  const [editingTaste, setEditingTaste] = useState(false)
+  const [artistQuery, setArtistQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<ArtistSuggestion[]>([])
+  const [searching, setSearching] = useState(false)
+  const [savingTaste, setSavingTaste] = useState(false)
+
+  // Generation
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0])
   const [playlistResult, setPlaylistResult] = useState<PlaylistResult | null>(null)
   const [showPaywall, setShowPaywall] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [showRefine, setShowRefine] = useState(false)
 
-  // Sliders
   const [modeSlider, setModeSlider] = useState(50)
   const [eraSlider, setEraSlider] = useState(50)
   const [obscuritySlider, setObscuritySlider] = useState(75)
 
-  // Selected track for detail panel
+  // Result interaction
   const [selectedSong, setSelectedSong] = useState<Song | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
+  const [feedback, setFeedback] = useState<Record<string, number>>({})
+  const [showExport, setShowExport] = useState(false)
+  const [copied, setCopied] = useState(false)
   const detailRef = useRef<HTMLDivElement>(null)
 
-  // Feedback
-  const [feedback, setFeedback] = useState<Record<string, number>>({})
-
+  // ── Load taste profile ─────────────────────────────────────────────────
   useEffect(() => {
-    const init = async () => {
-      const token = localStorage.getItem('access_token')
-      if (!token) return
+    if (!isSignedIn) return
+    fetch('/api/taste')
+      .then(r => r.json())
+      .then(d => {
+        setFavoriteArtists(d.favorite_artists || [])
+        setTasteLoaded(true)
+      })
+      .catch(() => setTasteLoaded(true))
+  }, [isSignedIn])
 
-      // Proactively refresh if token expires within the next 5 minutes
-      const expiresAt = Number(localStorage.getItem('token_expires_at') || 0)
-      if (expiresAt && Date.now() > expiresAt - 5 * 60 * 1000) {
-        const newToken = await refreshSpotifyToken()
-        setSpotifyToken(newToken || token)
-      } else {
-        setSpotifyToken(token)
-      }
-    }
-    init()
-  }, [])
-
+  // ── Loading message cycle ──────────────────────────────────────────────
   useEffect(() => {
     if (!isLoading) return
     setLoadingMessage(LOADING_MESSAGES[0])
@@ -163,106 +122,95 @@ export default function HomePage() {
     return () => clearInterval(interval)
   }, [isLoading])
 
-  // Animate detail panel in when song selected
+  // ── Detail panel animation ─────────────────────────────────────────────
   useEffect(() => {
     if (selectedSong) {
       setDetailVisible(false)
       const t = setTimeout(() => {
         setDetailVisible(true)
-        setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
-      }, 50)
+        setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60)
+      }, 40)
       return () => clearTimeout(t)
-    } else {
-      setDetailVisible(false)
     }
+    setDetailVisible(false)
   }, [selectedSong])
 
-  const handleConnectSpotify = async () => {
-    localStorage.removeItem('code_verifier')
-    localStorage.removeItem('access_token')
-    const verifier = await generateCodeVerifier()
-    const challenge = await generateCodeChallenge(verifier)
-    localStorage.setItem('code_verifier', verifier)
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: '2ee0d98b21d048978bf73d78924daf91',
-      scope: 'user-read-private user-read-email playlist-modify-public playlist-modify-private user-read-recently-played user-top-read user-library-read',
-      redirect_uri: 'https://www.algorithmssuck.com/callback',
-      code_challenge_method: 'S256',
-      code_challenge: challenge,
-    })
-    window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`
+  // ── Artist autocomplete (debounced) ────────────────────────────────────
+  useEffect(() => {
+    const q = artistQuery.trim()
+    if (q.length < 2) { setSuggestions([]); return }
+    setSearching(true)
+    const t = setTimeout(() => {
+      fetch(`/api/artist-search?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(d => setSuggestions(d.artists || []))
+        .catch(() => setSuggestions([]))
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => { clearTimeout(t); setSearching(false) }
+  }, [artistQuery])
+
+  const addArtist = (name: string) => {
+    if (favoriteArtists.includes(name) || favoriteArtists.length >= 25) return
+    setFavoriteArtists(prev => [...prev, name])
+    setArtistQuery('')
+    setSuggestions([])
   }
 
-  const handleDisconnectSpotify = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('code_verifier')
-    setSpotifyToken(null)
+  const removeArtist = (name: string) => {
+    setFavoriteArtists(prev => prev.filter(a => a !== name))
   }
 
-  const callGenerateAPI = async (token: string) => {
-    return fetch('/api/generate-playlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt, access_token: token,
-        mode_slider: modeSlider,
-        era_slider: eraSlider,
-        obscurity_slider: obscuritySlider,
-      }),
-    })
+  const saveTaste = async () => {
+    setSavingTaste(true)
+    try {
+      await fetch('/api/taste', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite_artists: favoriteArtists }),
+      })
+      setEditingTaste(false)
+    } finally {
+      setSavingTaste(false)
+    }
   }
 
+  // ── Generate ───────────────────────────────────────────────────────────
   const handleGeneratePlaylist = async () => {
-    if (!prompt.trim() || !spotifyToken) return
+    if (!prompt.trim()) return
     setIsLoading(true)
     setSelectedSong(null)
     setFeedback({})
+    setErrorMsg(null)
+    setShowExport(false)
 
     try {
-      let token = spotifyToken
-      let response = await callGenerateAPI(token)
-      let data = await response.json()
-
-      // If token expired, silently refresh and retry once
-      if (data.token_expired) {
-        const newToken = await refreshSpotifyToken()
-        if (newToken) {
-          setSpotifyToken(newToken)
-          token = newToken
-          response = await callGenerateAPI(token)
-          data = await response.json()
-        } else {
-          // Refresh failed — need full reconnect
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          localStorage.removeItem('token_expires_at')
-          setSpotifyToken(null)
-          return
-        }
-      }
+      const res = await fetch('/api/generate-playlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          mode_slider: modeSlider,
+          era_slider: eraSlider,
+          obscurity_slider: obscuritySlider,
+        }),
+      })
+      const data = await res.json()
 
       if (data.paywall) { setShowPaywall(true); return }
-      if (!response.ok) { alert('Error: ' + (data.error || data.message || 'Unknown error')); return }
+      if (data.needs_taste) { setEditingTaste(true); return }
+
       if (data.success) {
         setPlaylistResult(data)
         setShowPaywall(false)
         setPrompt('')
       } else {
-        alert('Error: ' + (data.error || data.message || 'Unknown error'))
+        setErrorMsg(data.message || data.error || 'Something went wrong. Try again.')
       }
-    } catch (err) {
-      console.error(err)
+    } catch {
+      setErrorMsg('Network error. Try again.')
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const handleSelectSong = (song: Song) => {
-    if (selectedSong?.spotify_id === song.spotify_id) {
-      setSelectedSong(null)
-    } else {
-      setSelectedSong(song)
     }
   }
 
@@ -287,7 +235,15 @@ export default function HomePage() {
     } catch (err) { console.error('Feedback error:', err) }
   }
 
-  // ── Loading ──────────────────────────────────────────────────────────
+  const copyUris = useCallback(() => {
+    if (!playlistResult?.spotify_uris) return
+    navigator.clipboard.writeText(playlistResult.spotify_uris.join('\n'))
+    setCopied(true)
+    setShowExport(true)
+    setTimeout(() => setCopied(false), 2500)
+  }, [playlistResult])
+
+  // ── Render gates ───────────────────────────────────────────────────────
   if (!isLoaded) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-gray-950">
@@ -300,64 +256,156 @@ export default function HomePage() {
     )
   }
 
-  // ── Not signed in ────────────────────────────────────────────────────
   if (!isSignedIn) {
     return (
       <main className="h-screen w-screen flex items-center justify-center bg-gray-950">
         <div className="text-center max-w-md px-6">
           <p className="text-green-400 text-sm font-medium mb-3 tracking-widest uppercase">algorithmssuck.com</p>
           <h1 className="text-4xl font-bold text-white mb-4">Music discovery.<br />No algorithm involved.</h1>
-          <p className="text-gray-400 mb-8">Describe a vibe. Get 20 songs you&apos;ve never heard, curated by AI with genuinely good taste.</p>
+          <p className="text-gray-400 mb-8">Tell us what you love. Describe a vibe. Get 20 songs you&apos;ve never heard, curated by someone with genuinely good taste.</p>
           <SignInButton mode="modal">
             <button className="px-8 py-4 bg-green-600 text-white rounded-full hover:bg-green-500 transition-colors font-semibold text-lg">
               Get started
             </button>
           </SignInButton>
-          <p className="text-gray-600 text-xs mt-4">3 free playlists. No credit card required.</p>
+          <p className="text-gray-600 text-xs mt-4">3 free playlists. No credit card. No Spotify account required.</p>
         </div>
       </main>
     )
   }
 
-  // ── Spotify not connected ────────────────────────────────────────────
-  if (!spotifyToken) {
+  if (!tasteLoaded) {
     return (
-      <main className="h-screen w-screen flex items-center justify-center bg-gray-950">
-        <div className="text-center max-w-md px-6">
-          <p className="text-green-400 text-sm mb-2">Hey {user.firstName || user.username} 👋</p>
-          <h1 className="text-3xl font-bold text-white mb-4">Connect your Spotify</h1>
-          <p className="text-gray-400 mb-8">We&apos;ll read your listening history to find music you haven&apos;t heard yet — not more of the same.</p>
-          <button onClick={handleConnectSpotify} className="px-8 py-4 bg-green-600 text-white rounded-full hover:bg-green-500 transition-colors font-semibold">
-            Connect Spotify
-          </button>
-          <div className="mt-6">
-            <SignOutButton><button className="text-gray-600 text-sm hover:text-gray-400 transition-colors">Sign out</button></SignOutButton>
+      <div className="h-screen w-screen flex items-center justify-center bg-gray-950">
+        <div className="flex space-x-1">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Taste onboarding / editing ─────────────────────────────────────────
+  const needsOnboarding = favoriteArtists.length === 0 || editingTaste
+
+  if (needsOnboarding) {
+    const canContinue = favoriteArtists.length >= 3
+    return (
+      <main className="min-h-screen bg-gray-950 text-white">
+        <div className="max-w-xl mx-auto px-6 py-16">
+          <p className="text-green-400 text-sm font-medium tracking-widest uppercase mb-3">algorithmssuck.com</p>
+          <h1 className="text-3xl font-bold text-white mb-3">
+            {editingTaste && favoriteArtists.length > 0 ? 'Your taste' : 'Who do you love?'}
+          </h1>
+          <p className="text-gray-400 mb-8">
+            Name a few artists you genuinely love — the ones you&apos;d mention to a friend in a record store.
+            Not what you play most. What you&apos;d defend. Three minimum, more is better.
+          </p>
+
+          <div className="relative mb-4">
+            <input
+              type="text"
+              value={artistQuery}
+              onChange={(e) => setArtistQuery(e.target.value)}
+              placeholder="Search for an artist..."
+              className="w-full px-5 py-4 bg-gray-900 border border-gray-800 rounded-2xl text-white placeholder-gray-600 focus:outline-none focus:border-green-700 text-base"
+            />
+            {searching && (
+              <div className="absolute right-5 top-1/2 -translate-y-1/2">
+                <div className="w-4 h-4 border-2 border-gray-700 border-t-green-400 rounded-full animate-spin" />
+              </div>
+            )}
+
+            {suggestions.length > 0 && (
+              <div className="absolute z-20 left-0 right-0 mt-2 bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+                {suggestions.map(a => (
+                  <button
+                    key={a.id}
+                    onClick={() => addArtist(a.name)}
+                    disabled={favoriteArtists.includes(a.name)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {a.image ? (
+                      <img src={a.image} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0 text-gray-600">♪</div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-white text-sm truncate">{a.name}</p>
+                      {a.genres.length > 0 && (
+                        <p className="text-gray-600 text-xs truncate">{a.genres.join(', ')}</p>
+                      )}
+                    </div>
+                    {favoriteArtists.includes(a.name) && (
+                      <span className="ml-auto text-green-400 text-xs flex-shrink-0">Added</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {favoriteArtists.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-8">
+              {favoriteArtists.map(name => (
+                <button
+                  key={name}
+                  onClick={() => removeArtist(name)}
+                  className="group px-3 py-2 bg-gray-900 border border-gray-800 hover:border-red-900 rounded-full text-sm text-gray-300 hover:text-red-400 transition-colors flex items-center gap-2"
+                >
+                  {name}
+                  <span className="text-gray-700 group-hover:text-red-400 transition-colors">✕</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={saveTaste}
+              disabled={!canContinue || savingTaste}
+              className="px-6 py-3 bg-green-600 text-white rounded-full hover:bg-green-500 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors font-semibold"
+            >
+              {savingTaste ? 'Saving...' : canContinue ? 'Continue' : `Add ${3 - favoriteArtists.length} more`}
+            </button>
+            {editingTaste && favoriteArtists.length >= 3 && (
+              <button onClick={() => setEditingTaste(false)} className="text-gray-600 hover:text-gray-400 text-sm transition-colors">
+                Cancel
+              </button>
+            )}
+          </div>
+
+          <div className="mt-10">
+            <SignOutButton>
+              <button className="text-gray-700 text-xs hover:text-gray-500 transition-colors">Sign out</button>
+            </SignOutButton>
           </div>
         </div>
       </main>
     )
   }
 
-  // ── Main app ─────────────────────────────────────────────────────────
+  // ── Main app ───────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-3xl mx-auto px-6 py-10">
 
-        {/* Header */}
-        <div className="flex justify-between items-center mb-10">
-          <div>
+        <div className="flex justify-between items-start mb-10 gap-4">
+          <div className="min-w-0">
             <p className="text-green-400 text-sm font-medium tracking-widest uppercase">algorithmssuck.com</p>
-            <p className="text-gray-500 text-sm">{user.primaryEmailAddress?.emailAddress}</p>
+            <p className="text-gray-500 text-sm truncate">{user.primaryEmailAddress?.emailAddress}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleDisconnectSpotify} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">Disconnect Spotify</button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <button onClick={() => setEditingTaste(true)} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+              Edit taste ({favoriteArtists.length})
+            </button>
             <SignOutButton>
               <button className="text-xs text-gray-500 hover:text-gray-300 bg-white/5 px-3 py-1.5 rounded-full transition-colors">Sign out</button>
             </SignOutButton>
           </div>
         </div>
 
-        {/* Form — collapses when results are showing */}
         {!playlistResult && (
           <>
             <div className="mb-3">
@@ -381,7 +429,6 @@ export default function HomePage() {
                   <Slider label="Mode" leftLabel="Genre strict" rightLabel="Pure vibe" value={modeSlider} onChange={setModeSlider} />
                   <Slider label="Era" leftLabel="Vintage" rightLabel="Modern" value={eraSlider} onChange={setEraSlider} />
                   <Slider label="Obscurity" leftLabel="Familiar anchors" rightLabel="Deep cuts only" value={obscuritySlider} onChange={setObscuritySlider} />
-                  <p className="text-gray-700 text-xs mt-2">These shape how the AI interprets your request.</p>
                 </div>
               )}
             </div>
@@ -396,7 +443,6 @@ export default function HomePage() {
           </>
         )}
 
-        {/* Compact "generate another" bar when results are showing */}
         {playlistResult && !isLoading && (
           <div className="mb-8 flex gap-3">
             <input
@@ -415,7 +461,7 @@ export default function HomePage() {
               Go
             </button>
             <button
-              onClick={() => { setPlaylistResult(null); setSelectedSong(null); setFeedback({}) }}
+              onClick={() => { setPlaylistResult(null); setSelectedSong(null); setFeedback({}); setShowExport(false) }}
               className="px-4 py-3 text-gray-600 hover:text-gray-400 bg-gray-900 border border-gray-800 rounded-xl transition-colors text-sm"
             >
               Clear
@@ -423,7 +469,12 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Loading */}
+        {errorMsg && !isLoading && (
+          <div className="mt-6 p-4 bg-red-950/40 border border-red-900/50 rounded-2xl">
+            <p className="text-red-300 text-sm">{errorMsg}</p>
+          </div>
+        )}
+
         {isLoading && (
           <div className="mt-8 p-8 bg-gray-900 rounded-2xl text-center">
             <div className="flex justify-center mb-4 gap-1">
@@ -433,15 +484,13 @@ export default function HomePage() {
               ))}
             </div>
             <p className="text-white font-medium text-lg">{loadingMessage}</p>
-            <p className="text-gray-600 text-sm mt-2">This takes 10–20 seconds. Real taste takes time.</p>
+            <p className="text-gray-600 text-sm mt-2">This takes 15–30 seconds. Real taste takes time.</p>
           </div>
         )}
 
-        {/* Paywall */}
         {showPaywall && (
           <div className="mt-8 p-8 bg-gray-900 rounded-2xl text-center">
-            <p className="text-3xl mb-3">🎵</p>
-            <h3 className="text-white text-xl font-bold mb-2">You&apos;ve used your 3 free playlists</h3>
+            <h3 className="text-white text-xl font-bold mb-2">You&apos;ve used your free playlists</h3>
             <p className="text-gray-400 mb-6">Subscribe for unlimited discovery, or grab a credit pack.</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button className="px-6 py-3 bg-green-600 text-white rounded-full font-semibold hover:bg-green-500 transition-colors">Subscribe — $4.99/month</button>
@@ -451,36 +500,52 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Playlist result — Album grid ──────────────────────────────── */}
+        {/* ── Result ─────────────────────────────────────────────────────── */}
         {playlistResult && !isLoading && (
           <div>
-            {/* Playlist header */}
             <div className="mb-6">
-              {playlistResult.title && (
-                <h2 className="text-white text-2xl font-bold mb-1">{playlistResult.title}</h2>
-              )}
+              {playlistResult.title && <h2 className="text-white text-2xl font-bold mb-1">{playlistResult.title}</h2>}
               <p className="text-gray-500 text-sm italic">&ldquo;{playlistResult.prompt}&rdquo;</p>
-              <div className="flex gap-3 mt-4 flex-wrap">
-                {playlistResult.playlist_url && (
-                  <a href={playlistResult.playlist_url} target="_blank" rel="noopener noreferrer"
-                    className="px-4 py-2 bg-green-600 text-white rounded-full hover:bg-green-500 transition-colors font-medium text-sm">
-                    Open in Spotify →
-                  </a>
-                )}
+
+              <div className="flex gap-2 mt-4 flex-wrap">
+                <button
+                  onClick={copyUris}
+                  className="px-4 py-2 bg-green-600 text-white rounded-full hover:bg-green-500 transition-colors font-medium text-sm"
+                >
+                  {copied ? 'Copied — now paste in Spotify' : 'Add to Spotify'}
+                </button>
                 {playlistResult.share_url && (
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(playlistResult.share_url || '')
-                      const btn = document.getElementById('copy-btn')
-                      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy link' }, 2000) }
+                      const btn = document.getElementById('share-btn')
+                      if (btn) { btn.textContent = 'Link copied'; setTimeout(() => { btn.textContent = 'Copy share link' }, 2000) }
                     }}
-                    id="copy-btn"
+                    id="share-btn"
                     className="px-4 py-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors font-medium text-sm"
                   >
-                    Copy link
+                    Copy share link
                   </button>
                 )}
               </div>
+
+              {showExport && (
+                <div className="mt-4 p-5 bg-gray-900 border border-green-900/40 rounded-2xl">
+                  <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-3">All 20 tracks copied</p>
+                  <ol className="text-gray-300 text-sm space-y-1.5 list-decimal list-inside">
+                    <li>Open the Spotify desktop app</li>
+                    <li>Create a new playlist (or open an existing one)</li>
+                    <li>Click into the track list area, then press <span className="text-white font-mono text-xs bg-white/10 px-1.5 py-0.5 rounded">⌘V</span> / <span className="text-white font-mono text-xs bg-white/10 px-1.5 py-0.5 rounded">Ctrl+V</span></li>
+                  </ol>
+                  <p className="text-gray-600 text-xs mt-3">
+                    On mobile or web?{' '}
+                    <a href="https://www.tunemymusic.com/transfer/freetext-to-spotify" target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400 underline">
+                      Paste them into TuneMyMusic
+                    </a>{' '}instead — it builds the playlist for you.
+                  </p>
+                  <button onClick={() => setShowExport(false)} className="text-gray-700 hover:text-gray-500 text-xs mt-3 transition-colors">Dismiss</button>
+                </div>
+              )}
             </div>
 
             {/* Album grid */}
@@ -491,181 +556,132 @@ export default function HomePage() {
                 return (
                   <button
                     key={song.spotify_id}
-                    onClick={() => handleSelectSong(song)}
+                    onClick={() => setSelectedSong(isSelected ? null : song)}
                     className={`relative group aspect-square rounded-xl overflow-hidden transition-all duration-200 focus:outline-none ${
-                      isSelected
-                        ? 'ring-2 ring-green-400 scale-95 shadow-lg shadow-green-900/40'
-                        : 'opacity-70 hover:opacity-100 hover:scale-95'
+                      isSelected ? 'ring-2 ring-green-400 scale-95' : 'opacity-70 hover:opacity-100 hover:scale-95'
                     }`}
                   >
-                    {/* Album art */}
                     {song.album_image ? (
-                      <img src={song.album_image} alt={song.name} className="w-full h-full object-cover" />
+                      <img src={song.album_image} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                        <span className="text-gray-600 text-2xl">♪</span>
-                      </div>
+                      <div className="w-full h-full bg-gray-800 flex items-center justify-center text-gray-600 text-2xl">♪</div>
                     )}
 
-                    {/* Track number */}
                     <div className="absolute top-1.5 left-1.5">
                       <span className="text-xs font-bold text-white/70 bg-black/50 rounded px-1">{index + 1}</span>
                     </div>
 
-                    {/* Feedback buttons — visible on hover or if rated */}
                     <div className={`absolute top-1.5 right-1.5 flex gap-1 transition-opacity duration-150 ${myRating !== 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                       <button
                         onClick={(e) => handleFeedback(song, 1, e)}
+                        aria-label="Love this"
                         className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                           myRating === 1 ? 'bg-green-500 text-white' : 'bg-black/60 text-white/70 hover:bg-green-500/80'
                         }`}
                       >↑</button>
                       <button
                         onClick={(e) => handleFeedback(song, -1, e)}
+                        aria-label="Not for me"
                         className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                           myRating === -1 ? 'bg-red-500 text-white' : 'bg-black/60 text-white/70 hover:bg-red-500/80'
                         }`}
                       >↓</button>
                     </div>
 
-                    {/* Hover overlay with track name */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/0 to-black/0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end p-2">
-                      <div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end p-2">
+                      <div className="min-w-0">
                         <p className="text-white text-xs font-semibold leading-tight truncate">{song.name}</p>
                         <p className="text-gray-300 text-xs truncate">{song.artist}</p>
                       </div>
                     </div>
-
-                    {/* Selected indicator dot */}
-                    {isSelected && (
-                      <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-green-400 rounded-full" />
-                    )}
                   </button>
                 )
               })}
             </div>
 
-            <p className="text-gray-700 text-xs mb-6 text-center">Click an album to learn why we picked it for you</p>
+            <p className="text-gray-700 text-xs mb-6 text-center">Click an album to hear it and see why we picked it</p>
 
-            {/* ── Detail panel ──────────────────────────────────────────── */}
+            {/* Detail panel */}
             <div
               ref={detailRef}
               className={`transition-all duration-500 ease-in-out overflow-hidden ${
-                selectedSong && detailVisible ? 'max-h-[700px] opacity-100' : 'max-h-0 opacity-0'
+                selectedSong && detailVisible ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
               }`}
             >
               {selectedSong && (
                 <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-
-                  {/* Top section: art + info */}
                   <div className="flex gap-5 p-6">
-                    {/* Album art — larger */}
                     <div className="flex-shrink-0">
                       {selectedSong.album_image ? (
-                        <img
-                          src={selectedSong.album_image}
-                          alt={selectedSong.name}
-                          className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl object-cover shadow-xl"
-                        />
+                        <img src={selectedSong.album_image} alt="" className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl object-cover" />
                       ) : (
-                        <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl bg-gray-800 flex items-center justify-center">
-                          <span className="text-gray-600 text-4xl">♪</span>
-                        </div>
+                        <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl bg-gray-800 flex items-center justify-center text-gray-600 text-4xl">♪</div>
                       )}
                     </div>
 
-                    {/* Track info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <div>
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="min-w-0">
                           <h3 className="text-white text-xl font-bold leading-tight">{selectedSong.name}</h3>
                           <p className="text-gray-400 mt-0.5">
                             {selectedSong.artist}
                             {selectedSong.year && <span className="text-gray-600"> · {selectedSong.year}</span>}
                           </p>
-                          {selectedSong.album_name && (
-                            <p className="text-gray-600 text-xs mt-0.5 italic">{selectedSong.album_name}</p>
-                          )}
+                          {selectedSong.album_name && <p className="text-gray-600 text-xs mt-0.5 italic truncate">{selectedSong.album_name}</p>}
                         </div>
-                        <button
-                          onClick={() => setSelectedSong(null)}
-                          className="text-gray-600 hover:text-gray-400 transition-colors text-lg flex-shrink-0 mt-0.5"
-                        >✕</button>
+                        <button onClick={() => setSelectedSong(null)} aria-label="Close" className="text-gray-600 hover:text-gray-400 transition-colors text-lg flex-shrink-0">✕</button>
                       </div>
 
-                      <div className="mt-2 mb-4">
-                        {selectedSong.popularity !== undefined && (
-                          <PopularityBadge popularity={selectedSong.popularity} />
-                        )}
-                      </div>
-
-                      {/* Why we chose it */}
                       {selectedSong.reason && (
                         <div>
-                          <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-2">
-                            Why we chose it for you
-                          </p>
+                          <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-2">Why we chose it for you</p>
                           <p className="text-gray-300 text-sm leading-relaxed">{selectedSong.reason}</p>
                         </div>
                       )}
 
-                      {/* Actions */}
                       <div className="mt-4 flex gap-2 items-center flex-wrap">
-                        <a
-                          href={selectedSong.external_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-4 py-2 bg-green-600 text-white rounded-full hover:bg-green-500 transition-colors font-medium text-xs"
-                        >
-                          Open in Spotify →
-                        </a>
-                        <div className="flex gap-1.5 ml-1">
-                          <button
-                            onClick={(e) => handleFeedback(selectedSong, 1, e)}
-                            className={`px-3 py-2 rounded-full text-xs font-medium transition-colors ${
-                              (feedback[selectedSong.spotify_id] || 0) === 1
-                                ? 'bg-green-600/30 text-green-400'
-                                : 'bg-white/5 text-gray-400 hover:bg-green-600/20 hover:text-green-400'
-                            }`}
-                          >
-                            ↑ Love it
-                          </button>
-                          <button
-                            onClick={(e) => handleFeedback(selectedSong, -1, e)}
-                            className={`px-3 py-2 rounded-full text-xs font-medium transition-colors ${
-                              (feedback[selectedSong.spotify_id] || 0) === -1
-                                ? 'bg-red-900/30 text-red-400'
-                                : 'bg-white/5 text-gray-400 hover:bg-red-900/20 hover:text-red-400'
-                            }`}
-                          >
-                            ↓ Not for me
-                          </button>
-                        </div>
+                        {selectedSong.external_url && (
+                          <a href={selectedSong.external_url} target="_blank" rel="noopener noreferrer"
+                            className="px-4 py-2 bg-green-600 text-white rounded-full hover:bg-green-500 transition-colors font-medium text-xs">
+                            Open in Spotify →
+                          </a>
+                        )}
+                        <button
+                          onClick={(e) => handleFeedback(selectedSong, 1, e)}
+                          className={`px-3 py-2 rounded-full text-xs font-medium transition-colors ${
+                            (feedback[selectedSong.spotify_id] || 0) === 1
+                              ? 'bg-green-600/30 text-green-400'
+                              : 'bg-white/5 text-gray-400 hover:bg-green-600/20 hover:text-green-400'
+                          }`}
+                        >↑ Love it</button>
+                        <button
+                          onClick={(e) => handleFeedback(selectedSong, -1, e)}
+                          className={`px-3 py-2 rounded-full text-xs font-medium transition-colors ${
+                            (feedback[selectedSong.spotify_id] || 0) === -1
+                              ? 'bg-red-900/30 text-red-400'
+                              : 'bg-white/5 text-gray-400 hover:bg-red-900/20 hover:text-red-400'
+                          }`}
+                        >↓ Not for me</button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Spotify embed player */}
                   <div className="px-6 pb-6">
                     <iframe
                       key={selectedSong.spotify_id}
                       src={`https://open.spotify.com/embed/track/${selectedSong.spotify_id}?utm_source=generator&theme=0`}
-                      width="100%"
-                      height="80"
-                      frameBorder="0"
+                      width="100%" height="80" frameBorder="0"
                       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                      loading="lazy"
-                      className="rounded-xl"
+                      loading="lazy" className="rounded-xl"
+                      title={`${selectedSong.name} by ${selectedSong.artist}`}
                     />
                   </div>
                 </div>
               )}
             </div>
-
           </div>
         )}
 
-        {/* Example prompts */}
         {!playlistResult && !isLoading && !showPaywall && (
           <div className="mt-10">
             <p className="text-gray-600 text-sm mb-3">Try something like:</p>

@@ -3,3 +3,6 @@
 .env.production
 .env.development
 node_modules/
+
+# typescript build cache
+*.tsbuildinfo
